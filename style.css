@@ -30,7 +30,7 @@ body { font-family: var(--font); background: var(--white); color: var(--black); 
 .role-btn.active { background: var(--black); color: var(--white); }
 .field-group { margin-bottom: 1rem; }
 .field-group label { display: block; font-size: 0.75rem; font-weight: 500; color: var(--gray-600); margin-bottom: 0.35rem; text-transform: uppercase; letter-spacing: 0.05em; text-align: left; }
-input[type=text], input[type=number], input[type=password], input[type=date], input[type=time], select {
+input[type=text], input[type=email], input[type=number], input[type=password], input[type=date], input[type=time], select {
   width: 100%; padding: 0.75rem; font-family: var(--font); font-size: 1rem;
   border: 1px solid var(--gray-200); border-radius: 0; background: var(--white); color: var(--black);
   outline: none; transition: border-color 0.15s; appearance: none; -webkit-appearance: none;

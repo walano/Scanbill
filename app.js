@@ -386,16 +386,9 @@ function rebuildGrid() {
   keys.forEach(function(num) {
     var t = tickets[num];
     var resolvedUrl = (concertMeta.siteUrl || SITE_URL || '').replace(/\/+$/, '');
-    // Encode concert data in QR URL params for client page
+    // Short payload: id only. ticket.html loads the rest from Supabase.
     var qrBase = resolvedUrl ? (resolvedUrl + '/ticket.html') : null;
-    var qrParams = '?id=' + encodeURIComponent(num)
-      + '&c=' + encodeURIComponent(t.concert || '')
-      + '&p=' + (t.presale || 0)
-      + '&d=' + (t.door || 0)
-      + '&cur=' + encodeURIComponent(t.currency || '')
-      + (t.concertDate ? '&dt=' + t.concertDate : '')
-      + (t.concertTime ? '&tm=' + encodeURIComponent(t.concertTime) : '');
-    var qrPayload = qrBase ? (qrBase + qrParams) : num;
+    var qrPayload = qrBase ? (qrBase + '?id=' + encodeURIComponent(num)) : num;
     var svgStr = window.makeQRSVG(qrPayload, 120);
     var div = document.createElement('div');
     div.className = 'ticket-card' + (t.used ? ' used' : '');
@@ -483,16 +476,9 @@ async function generateTickets() {
     newTickets.push(t);
 
     var resolvedUrl = siteUrl || '';
-    // Encode concert data in QR URL params for client page
+    // Short payload: id only. ticket.html loads the rest from Supabase.
     var qrBase = resolvedUrl ? (resolvedUrl + '/ticket.html') : null;
-    var qrParams = '?id=' + encodeURIComponent(num)
-      + '&c=' + encodeURIComponent(name)
-      + '&p=' + presale
-      + '&d=' + door
-      + '&cur=' + encodeURIComponent(currency)
-      + (concertDate ? '&dt=' + concertDate : '')
-      + (concertTime ? '&tm=' + encodeURIComponent(concertTime) : '');
-    var qrPayload = qrBase ? (qrBase + qrParams) : num;
+    var qrPayload = qrBase ? (qrBase + '?id=' + encodeURIComponent(num)) : num;
     var svgStr = window.makeQRSVG(qrPayload, 120);
     var div = document.createElement('div');
     div.className = 'ticket-card';
@@ -549,15 +535,7 @@ async function doZip() {
   var zip = new JSZip();
   var resolvedUrlZip = (concertMeta.siteUrl || SITE_URL || '').replace(/\/+$/, '');
   for (var i = 0; i < keys.length; i++) {
-    var tZip = tickets[keys[i]];
-    var qrParamsZip = '?id=' + encodeURIComponent(keys[i])
-      + '&c=' + encodeURIComponent(tZip.concert || '')
-      + '&p=' + (tZip.presale || 0)
-      + '&d=' + (tZip.door || 0)
-      + '&cur=' + encodeURIComponent(tZip.currency || '')
-      + (tZip.concertDate ? '&dt=' + tZip.concertDate : '')
-      + (tZip.concertTime ? '&tm=' + encodeURIComponent(tZip.concertTime) : '');
-    var qrPayloadZip = resolvedUrlZip ? (resolvedUrlZip + '/ticket.html' + qrParamsZip) : keys[i];
+    var qrPayloadZip = resolvedUrlZip ? (resolvedUrlZip + '/ticket.html?id=' + encodeURIComponent(keys[i])) : keys[i];
     zip.file(keys[i] + '.svg', window.makeQRSVG(qrPayloadZip, 400));
     pf.style.width = Math.round((i + 1) / keys.length * 100) + '%';
     pl.textContent = (i + 1) + ' / ' + keys.length;

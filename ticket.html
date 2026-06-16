@@ -75,16 +75,21 @@ function gp(name) {
   return m ? decodeURIComponent(m[1].replace(/\+/g,' ')) : null;
 }
 
+// Normalize a time value (DB gives "HH:MM:SS", params give "HH:MM") → "HH:MM"
+function normTime(t) { return t ? String(t).slice(0, 5) : '00:00'; }
+
 function activePrice(presale, door, dateStr, timeStr) {
   if (!dateStr) return { price: presale, mode: 'prévente' };
   var now = new Date();
-  var sw = new Date(dateStr + 'T' + (timeStr || '00:00') + ':00');
+  var sw = new Date(dateStr + 'T' + normTime(timeStr) + ':00');
+  if (isNaN(sw.getTime())) return { price: presale, mode: 'prévente' };
   return now >= sw ? { price: door, mode: 'jour J' } : { price: presale, mode: 'prévente' };
 }
 
 function fmtDate(dateStr, timeStr) {
   if (!dateStr) return '';
-  var d = new Date(dateStr + 'T' + (timeStr || '00:00') + ':00');
+  var d = new Date(dateStr + 'T' + normTime(timeStr) + ':00');
+  if (isNaN(d.getTime())) return dateStr; // fall back to raw date, never "Invalid Date"
   return d.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
 }
 
@@ -120,43 +125,55 @@ function applyStatus(status, soldTime, entryTime) {
   }
 }
 
-async function loadLiveStatus(id, sb) {
+function renderFromData(d) {
+  renderStatic(d.id, d.concert, d.presale, d.door, d.currency, d.concert_date, d.concert_time);
+  applyStatus(d.status || 'available', d.sold_time, d.entry_time);
+  document.getElementById('state-loading').style.display = 'none';
+  document.getElementById('state-ticket').style.display = 'block';
+}
+
+async function fetchTicket(id, sb) {
   try {
-    var res = await sb.from('tickets').select('status,sold_time,entry_time').eq('id', id).single();
-    if (res.data) applyStatus(res.data.status, res.data.sold_time, res.data.entry_time);
-  } catch(e) {}
-  document.getElementById('t-refreshing').textContent = '';
+    var res = await sb.from('tickets')
+      .select('id,concert,presale,door,currency,concert_date,concert_time,status,sold_time,entry_time')
+      .eq('id', id).single();
+    return res.data || null;
+  } catch (e) { return null; }
 }
 
 (async function load() {
   var id = (gp('id') || '').toUpperCase();
-  var concert = gp('c') || '';
-  var presale = parseFloat(gp('p')) || 0;
-  var door = parseFloat(gp('d')) || 0;
-  var currency = gp('cur') || '';
-  var dateStr = gp('dt') || '';
-  var timeStr = gp('tm') || '';
-
   if (!id) { showError('Aucun identifiant de ticket fourni.'); return; }
-  if (!concert) { showError('QR code invalide — données manquantes.'); return; }
 
-  // Render static info from URL params immediately
-  renderStatic(id, concert, presale, door, currency, dateStr, timeStr);
-  applyStatus('available', null, null); // default while loading live status
-  document.getElementById('state-loading').style.display = 'none';
-  document.getElementById('state-ticket').style.display = 'block';
+  // Fallback: old QR codes that still carry full data in the URL
+  var fromParams = {
+    id: id, concert: gp('c') || '', presale: parseFloat(gp('p')) || 0,
+    door: parseFloat(gp('d')) || 0, currency: gp('cur') || '',
+    concert_date: gp('dt') || '', concert_time: gp('tm') || '',
+    status: 'available', sold_time: null, entry_time: null
+  };
+  if (fromParams.concert) renderFromData(fromParams); // instant render if params present
 
-  // Fetch live status from Supabase
-  if (SUPABASE_URL && SUPABASE_ANON_KEY) {
-    document.getElementById('t-refreshing').textContent = 'Vérification du statut...';
-    var s = document.createElement('script');
-    s.src = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js';
-    s.onload = async function() {
-      var sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-      await loadLiveStatus(id, sb);
-    };
-    document.head.appendChild(s);
+  if (!(SUPABASE_URL && SUPABASE_ANON_KEY)) {
+    if (!fromParams.concert) showError('QR code invalide — données manquantes.');
+    return;
   }
+
+  document.getElementById('t-refreshing').textContent = 'Chargement...';
+  var s = document.createElement('script');
+  s.src = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js';
+  s.onload = async function() {
+    var sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    var row = await fetchTicket(id, sb);
+    if (row) renderFromData(row);          // authoritative data from DB
+    else if (!fromParams.concert) showError('Ticket introuvable.');
+    document.getElementById('t-refreshing').textContent = '';
+  };
+  s.onerror = function() {
+    if (!fromParams.concert) showError('Erreur de chargement. Vérifiez votre connexion.');
+    document.getElementById('t-refreshing').textContent = '';
+  };
+  document.head.appendChild(s);
 })();
 
 function showError(msg) {

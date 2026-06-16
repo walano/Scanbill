@@ -48,6 +48,7 @@ var CURRENCIES = [
 
 // ── State ──
 var currentRole = null;
+var currentUserEmail = null;
 var tickets = {};
 var scanLog = [];
 var concertMeta = {};
@@ -100,24 +101,25 @@ async function dbLoadTickets() {
       currency: r.currency, concertDate: r.concert_date, concertTime: r.concert_time,
       used: r.used, status: r.status || 'available',
       scanTime: r.scan_time, soldTime: r.sold_time, entryTime: r.entry_time,
-      scannedPrice: r.scanned_price, scannedMode: r.scanned_mode
+      scannedPrice: r.scanned_price, scannedMode: r.scanned_mode,
+      soldBy: r.sold_by, enteredBy: r.entered_by
     };
   });
   return map;
 }
 
-async function dbMarkSold(id, soldTime, scannedPrice, scannedMode) {
+async function dbMarkSold(id, soldTime, scannedPrice, scannedMode, soldBy) {
   if (!sb) return;
   await sb.from('tickets').update({
     status: 'sold', sold_time: soldTime, scan_time: soldTime,
-    scanned_price: scannedPrice, scanned_mode: scannedMode
+    scanned_price: scannedPrice, scanned_mode: scannedMode, sold_by: soldBy
   }).eq('id', id);
 }
 
-async function dbMarkEntered(id, entryTime) {
+async function dbMarkEntered(id, entryTime, enteredBy) {
   if (!sb) return;
   await sb.from('tickets').update({
-    status: 'entered', used: true, entry_time: entryTime, scan_time: entryTime
+    status: 'entered', used: true, entry_time: entryTime, scan_time: entryTime, entered_by: enteredBy
   }).eq('id', id);
 }
 
@@ -138,18 +140,12 @@ async function dbClearAll() {
     sel.appendChild(o);
   });
 
-  // Set default concert date
-  document.getElementById('concert-date').value = new Date().toISOString().split('T')[0];
-
   // Price preview listeners
   ['price-presale','price-door','concert-date','concert-time','currency'].forEach(function(id) {
     document.getElementById(id).addEventListener('change', updatePricePreview);
     document.getElementById(id).addEventListener('input', updatePricePreview);
   });
   updatePricePreview();
-
-  // Always set role UI immediately — never skip this
-  selectRole('admin');
 
   // Load Supabase async, then check for existing session
   if (SUPABASE_URL && SUPABASE_ANON_KEY) {
@@ -162,6 +158,7 @@ async function dbClearAll() {
         if (res.data && res.data.session) {
           var meta = res.data.session.user.user_metadata || {};
           currentRole = meta.role || 'agent';
+          currentUserEmail = res.data.session.user.email || null;
           document.getElementById('app-login').style.display = 'none';
           document.getElementById('app-shell').style.display = 'flex';
           loadAll().then(function() { setupShell(); });
@@ -204,21 +201,11 @@ function updatePricePreview() {
 }
 
 // ── Auth ──
-function selectRole(r) {
-  currentRole = r;
-  document.getElementById('btn-admin').classList.toggle('active', r === 'admin');
-  document.getElementById('btn-agent').classList.toggle('active', r === 'agent');
-  document.getElementById('pin-input').value = '';
-  document.getElementById('pin-err').textContent = '';
-}
-
 async function tryLogin() {
+  var email = document.getElementById('email-input').value.trim().toLowerCase();
   var pin = document.getElementById('pin-input').value.trim();
   var err = document.getElementById('pin-err');
-  if (!pin) return;
-
-  // Map role selection to email
-  var email = currentRole === 'admin' ? 'admin@scanbill.app' : 'agent@scanbill.app';
+  if (!email || !pin) { err.textContent = 'Email et mot de passe requis.'; return; }
 
   err.textContent = '';
   document.getElementById('login-btn').disabled = true;
@@ -245,7 +232,7 @@ async function tryLogin() {
   var res = await sb.auth.signInWithPassword({ email: email, password: pin });
 
   if (res.error) {
-    err.textContent = 'PIN incorrect.';
+    err.textContent = 'Identifiants incorrects.';
     document.getElementById('pin-input').value = '';
     document.getElementById('login-btn').disabled = false;
     document.getElementById('login-btn').textContent = 'Entrer';
@@ -254,7 +241,8 @@ async function tryLogin() {
 
   // Read role from JWT user_metadata
   var meta = res.data.user.user_metadata || {};
-  currentRole = meta.role || currentRole;
+  currentRole = meta.role || 'agent';
+  currentUserEmail = res.data.user.email || email;
 
   document.getElementById('app-login').style.display = 'none';
   document.getElementById('app-shell').style.display = 'flex';
@@ -263,19 +251,25 @@ async function tryLogin() {
   loadAll().then(function() { setupShell(); });
 }
 
+// Friendly agent label from email (e.g. "agent1@scanbill.app" → "agent1")
+function agentLabel(email) {
+  return email ? String(email).split('@')[0] : '';
+}
+
 async function logout() {
   stopCamera();
   if (sb) await sb.auth.signOut();
   currentRole = null;
+  currentUserEmail = null;
   tickets = {}; scanLog = []; concertMeta = {};
   document.getElementById('app-shell').style.display = 'none';
   document.getElementById('app-login').style.display = 'flex';
   document.getElementById('pin-input').value = '';
+  document.getElementById('email-input').value = '';
   document.getElementById('pin-err').textContent = '';
   document.getElementById('ticket-grid').innerHTML = '';
   if (document.getElementById('ticket-detail')) document.getElementById('ticket-detail').style.display = 'none';
   if (document.getElementById('scan-result')) document.getElementById('scan-result').style.display = 'none';
-  selectRole('admin');
 }
 
 // ── Storage — Supabase only ──
@@ -334,6 +328,7 @@ function setupShell() {
 
     nav.innerHTML = tabBtn('generate', 'Générer', true) + tabBtn('scan', 'Scanner') + tabBtn('registry', 'Registre');
     bnav.innerHTML = bnavBtn('generate', 'Générer', true) + bnavBtn('scan', 'Scanner') + bnavBtn('registry', 'Registre');
+    fillGenerateForm();
     rebuildGrid();
     switchTab('generate', nav.children[0]);
   } else {
@@ -414,16 +409,50 @@ function rebuildGrid() {
 }
 
 // ── Generate ──
+// Once event info is saved, the form reflects it (no hardcoded defaults).
+function fillGenerateForm() {
+  if (!concertMeta || !concertMeta.name) return;
+  var set = function(id, v) { var e = document.getElementById(id); if (e && v != null && v !== '') e.value = v; };
+  set('concert-name', concertMeta.name);
+  set('price-presale', concertMeta.presale);
+  set('price-door', concertMeta.door);
+  set('concert-date', concertMeta.concertDate);
+  if (concertMeta.concertTime) set('concert-time', String(concertMeta.concertTime).slice(0, 5));
+  if (concertMeta.currency) document.getElementById('currency').value = concertMeta.currency;
+  // Prefix: infer from an existing ticket id (e.g. "TKT-001" → "TKT")
+  var keys = Object.keys(tickets);
+  if (keys.length) {
+    var pfx = keys[0].split('-')[0];
+    if (pfx) set('ticket-prefix', pfx);
+  }
+  updatePricePreview();
+}
+
 async function generateTickets() {
-  var name = document.getElementById('concert-name').value.trim() || 'CONCERT';
-  var presale = parseInt(document.getElementById('price-presale').value) || 5000;
-  var door = parseInt(document.getElementById('price-door').value) || 7000;
+  var name = document.getElementById('concert-name').value.trim();
+  var prefix = document.getElementById('ticket-prefix').value.trim();
+  var count = parseInt(document.getElementById('ticket-count').value);
+  var presale = parseInt(document.getElementById('price-presale').value);
+  var door = parseInt(document.getElementById('price-door').value);
   var currency = document.getElementById('currency').value;
-  var count = Math.min(parseInt(document.getElementById('ticket-count').value) || 10, 500);
-  var prefix = document.getElementById('ticket-prefix').value.trim() || 'TKT';
   var concertDate = document.getElementById('concert-date').value;
-  var concertTime = document.getElementById('concert-time').value || '00:00';
+  var concertTime = document.getElementById('concert-time').value;
   var siteUrl = (SITE_URL || '').trim().replace(/\/+$/, '');
+
+  // Require every field — no hardcoded defaults
+  var missing = [];
+  if (!name) missing.push('Nom du concert');
+  if (!prefix) missing.push('Préfixe');
+  if (isNaN(count) || count < 1) missing.push('Nombre de tickets');
+  if (isNaN(presale)) missing.push('Prix prévente');
+  if (isNaN(door)) missing.push('Prix jour J');
+  if (!concertDate) missing.push('Date du concert');
+  if (!concertTime) missing.push('Heure bascule jour J');
+  if (missing.length) {
+    alert('Renseignez d\'abord :\n- ' + missing.join('\n- '));
+    return;
+  }
+  count = Math.min(count, 500);
 
   concertMeta = { name: name, presale: presale, door: door, currency: currency, concertDate: concertDate, concertTime: concertTime, siteUrl: siteUrl };
 
@@ -686,6 +715,7 @@ async function confirmEntry() {
 
   var now = new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
   var active = getActivePrice(t);
+  var who = agentLabel(currentUserEmail);
   var box = document.getElementById('scan-result');
 
   if (action === 'sell') {
@@ -694,7 +724,8 @@ async function confirmEntry() {
     t.scanTime = now;
     t.scannedPrice = active.price;
     t.scannedMode = active.mode;
-    if (sb) await dbMarkSold(id, now, active.price, active.mode);
+    t.soldBy = who;
+    if (sb) await dbMarkSold(id, now, active.price, active.mode, who);
       scanLog.unshift({ id: id, time: now, action: 'vendu', price: active.price, currency: t.currency, mode: active.mode });
     box.className = 'scan-result ok';
     box.textContent = id + ' — vendu · ' + active.price.toLocaleString() + ' ' + t.currency + ' · ' + now;
@@ -707,7 +738,8 @@ async function confirmEntry() {
     t.used = true;
     t.entryTime = now;
     t.scanTime = now;
-    if (sb) await dbMarkEntered(id, now);
+    t.enteredBy = who;
+    if (sb) await dbMarkEntered(id, now, who);
       scanLog.unshift({ id: id, time: now, action: 'entré', price: t.scannedPrice || active.price, currency: t.currency, mode: t.scannedMode || active.mode });
     box.className = 'scan-result ok';
     box.textContent = id + ' — accès accordé · ' + now;
@@ -843,29 +875,32 @@ function sortRegistry(key) {
 
 function updateSortIndicators() {
   var arrow = registrySort.dir === 'asc' ? '▲' : '▼';
-  var s = document.getElementById('sort-ind-status');
-  var t = document.getElementById('sort-ind-time');
-  if (s) s.textContent = registrySort.key === 'status' ? arrow : '';
-  if (t) t.textContent = registrySort.key === 'time' ? arrow : '';
+  ['id', 'status', 'time', 'agent'].forEach(function(k) {
+    var el = document.getElementById('sort-ind-' + k);
+    if (el) el.textContent = registrySort.key === k ? arrow : '';
+  });
 }
 
 function renderRegistry() {
   var body = document.getElementById('registry-body');
   var all = Object.values(tickets);
   if (!all.length) {
-    body.innerHTML = '<tr><td colspan="4" class="empty-state">Génère des tickets d\'abord</td></tr>';
+    body.innerHTML = '<tr><td colspan="5" class="empty-state">Génère des tickets d\'abord</td></tr>';
     updateSortIndicators();
     return;
   }
   all.sort(function(a, b) {
-    var av, bv;
+    var cmp;
     if (registrySort.key === 'status') {
-      av = STATUS_RANK[a.status || 'available']; bv = STATUS_RANK[b.status || 'available'];
-    } else {
-      av = scanTimeSecs(a.entryTime || a.soldTime); bv = scanTimeSecs(b.entryTime || b.soldTime);
+      cmp = STATUS_RANK[a.status || 'available'] - STATUS_RANK[b.status || 'available'];
+    } else if (registrySort.key === 'time') {
+      cmp = scanTimeSecs(a.entryTime || a.soldTime) - scanTimeSecs(b.entryTime || b.soldTime);
+    } else if (registrySort.key === 'agent') {
+      cmp = String(a.soldBy || '').localeCompare(String(b.soldBy || ''));
+    } else { // id
+      cmp = String(a.id).localeCompare(String(b.id), undefined, { numeric: true });
     }
-    if (av === bv) return a.id < b.id ? -1 : 1; // stable tiebreak by ticket id
-    var cmp = av < bv ? -1 : 1;
+    if (cmp === 0) cmp = String(a.id).localeCompare(String(b.id), undefined, { numeric: true });
     return registrySort.dir === 'asc' ? cmp : -cmp;
   });
   body.innerHTML = all.map(function(t) {
@@ -881,6 +916,7 @@ function renderRegistry() {
       '<td>' + t.id + '</td>' +
       '<td class="' + statusClass + '">' + statusLabel + '</td>' +
       '<td>' + timeDisplay + '</td>' +
+      '<td>' + (t.soldBy || '—') + '</td>' +
       '<td>' + priceDisplay + '</td>' +
       '</tr>';
   }).join('');
@@ -890,10 +926,10 @@ function renderRegistry() {
 function exportCSV() {
   var all = Object.values(tickets);
   if (!all.length) return;
-  var rows = [['N° Ticket','Concert','Statut','Heure vente','Heure entrée','Prix scanné','Mode tarif','Devise']];
+  var rows = [['N° Ticket','Concert','Statut','Vendu par','Entré par','Heure vente','Heure entrée','Prix scanné','Mode tarif','Devise']];
   all.forEach(function(t) {
     var st = t.status || 'available';
-    rows.push([t.id, t.concert, st, t.soldTime || '', t.entryTime || '', t.scannedPrice || '', t.scannedMode || '', t.currency]);
+    rows.push([t.id, t.concert, st, t.soldBy || '', t.enteredBy || '', t.soldTime || '', t.entryTime || '', t.scannedPrice || '', t.scannedMode || '', t.currency]);
   });
   var csv = rows.map(function(r) { return r.join(','); }).join('\n');
   var blob = new Blob([csv], { type: 'text/csv' });

@@ -12,13 +12,13 @@
   <div class="login-box">
     <div class="wordmark">Scanbill</div>
     <p class="tagline">Système de billetterie à scan</p>
-    <div class="role-row">
-      <button class="role-btn active" id="btn-admin" onclick="selectRole('admin')">Organisateur</button>
-      <button class="role-btn" id="btn-agent" onclick="selectRole('agent')">Agent scan</button>
+    <div class="field-group">
+      <label for="email-input">Email</label>
+      <input type="email" id="email-input" placeholder="vous@scanbill.app" autocomplete="username" autocapitalize="off" spellcheck="false" onkeydown="if(event.key==='Enter')document.getElementById('pin-input').focus()">
     </div>
     <div class="field-group">
       <label for="pin-input">Mot de passe</label>
-      <input type="password" id="pin-input" maxlength="30" placeholder="——————" autocomplete="off" onkeydown="if(event.key==='Enter')tryLogin()">
+      <input type="password" id="pin-input" maxlength="60" placeholder="——————" autocomplete="current-password" onkeydown="if(event.key==='Enter')tryLogin()">
       <span class="field-err" id="pin-err"></span>
     </div>
     <button class="btn-main" id="login-btn" onclick="tryLogin()">Entrer</button>
@@ -47,15 +47,15 @@
       <div class="form-grid">
         <div class="field-group">
           <label>Nom du concert</label>
-          <input type="text" id="concert-name" value="CONCERT GABON 2025">
+          <input type="text" id="concert-name" placeholder="Nom de l'événement">
         </div>
         <div class="field-group">
           <label>Préfixe</label>
-          <input type="text" id="ticket-prefix" value="TKT">
+          <input type="text" id="ticket-prefix" placeholder="Ex : TKT">
         </div>
         <div class="field-group">
           <label>Nombre de tickets</label>
-          <input type="number" id="ticket-count" value="10" min="1" max="500">
+          <input type="number" id="ticket-count" min="1" max="500" placeholder="Ex : 100">
         </div>
         <div class="field-group">
           <label>Devise</label>
@@ -69,11 +69,11 @@
         <div class="price-grid">
           <div class="field-group">
             <label>Prix prévente</label>
-            <input type="number" id="price-presale" value="5000">
+            <input type="number" id="price-presale" placeholder="Ex : 5000">
           </div>
           <div class="field-group">
             <label>Prix jour J</label>
-            <input type="number" id="price-door" value="7000">
+            <input type="number" id="price-door" placeholder="Ex : 7000">
           </div>
           <div class="field-group">
             <label>Date du concert</label>
@@ -81,7 +81,7 @@
           </div>
           <div class="field-group">
             <label>Heure bascule jour J</label>
-            <input type="time" id="concert-time" value="00:00">
+            <input type="time" id="concert-time">
           </div>
         </div>
         <div class="price-preview" id="price-preview"></div>
@@ -194,14 +194,15 @@
         <table>
           <thead>
             <tr>
-              <th>N° Ticket</th>
-              <th class="th-sort" id="th-status" onclick="sortRegistry('status')">Statut <span class="sort-ind" id="sort-ind-status"></span></th>
-              <th class="th-sort" id="th-time" onclick="sortRegistry('time')">Date &amp; heure <span class="sort-ind" id="sort-ind-time"></span></th>
+              <th class="th-sort" onclick="sortRegistry('id')">N° Ticket <span class="sort-ind" id="sort-ind-id"></span></th>
+              <th class="th-sort" onclick="sortRegistry('status')">Statut <span class="sort-ind" id="sort-ind-status"></span></th>
+              <th class="th-sort" onclick="sortRegistry('time')">Date &amp; heure <span class="sort-ind" id="sort-ind-time"></span></th>
+              <th class="th-sort" onclick="sortRegistry('agent')">Agent <span class="sort-ind" id="sort-ind-agent"></span></th>
               <th>Prix scanné</th>
             </tr>
           </thead>
           <tbody id="registry-body">
-            <tr><td colspan="4" class="empty-state">Génère des tickets d'abord</td></tr>
+            <tr><td colspan="5" class="empty-state">Génère des tickets d'abord</td></tr>
           </tbody>
         </table>
       </div>

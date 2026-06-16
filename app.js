@@ -1,6 +1,6 @@
 // ── Config ──
 // Mets ton URL de déploiement ici — ex: 'https://scanbill.vercel.app'
-var SITE_URL = '';
+var SITE_URL = 'https://scanbill-ivory.vercel.app/';
 
 // ── Supabase config ──
 var SUPABASE_URL = 'https://xudwrqowcnqsggiizmhw.supabase.co';

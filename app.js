@@ -129,6 +129,7 @@ async function dbClearAll() {
 
 // ── Init ──
 (function init() {
+  // Populate currency dropdown
   var sel = document.getElementById('currency');
   CURRENCIES.forEach(function(c) {
     var o = document.createElement('option');
@@ -137,43 +138,39 @@ async function dbClearAll() {
     sel.appendChild(o);
   });
 
-  var today = new Date();
-  document.getElementById('concert-date').value = today.toISOString().split('T')[0];
+  // Set default concert date
+  document.getElementById('concert-date').value = new Date().toISOString().split('T')[0];
 
+  // Price preview listeners
   ['price-presale','price-door','concert-date','concert-time','currency'].forEach(function(id) {
     document.getElementById(id).addEventListener('change', updatePricePreview);
     document.getElementById(id).addEventListener('input', updatePricePreview);
   });
   updatePricePreview();
+
+  // Always set role UI immediately — never skip this
   selectRole('admin');
 
-  // Check for existing session on page load
-  if (SUPABASE_URL && SUPABASE_ANON_KEY) {
-    var s2 = document.createElement('script');
-    s2.src = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js';
-    s2.onload = function() {
-      if (initSupabase()) {
-        sb.auth.getSession().then(function(res) {
-          if (res.data && res.data.session) {
-            var meta = res.data.session.user.user_metadata || {};
-            currentRole = meta.role || 'agent';
-            document.getElementById('app-login').style.display = 'none';
-            document.getElementById('app-shell').style.display = 'flex';
-            loadAll().then(function() { setupShell(); });
-          }
-        });
-      }
-    };
-    document.head.appendChild(s2);
-    return;
-  }
-
-  // Load Supabase JS if configured (legacy path — kept as no-op since handled above)
-  var _dummy = null;
+  // Load Supabase async, then check for existing session
   if (SUPABASE_URL && SUPABASE_ANON_KEY) {
     var s = document.createElement('script');
     s.src = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js';
-    s.onload = function() { initSupabase(); };
+    s.onload = function() {
+      if (!initSupabase()) return;
+      // Auto-login if session exists
+      sb.auth.getSession().then(function(res) {
+        if (res.data && res.data.session) {
+          var meta = res.data.session.user.user_metadata || {};
+          currentRole = meta.role || 'agent';
+          document.getElementById('app-login').style.display = 'none';
+          document.getElementById('app-shell').style.display = 'flex';
+          loadAll().then(function() { setupShell(); });
+        }
+      });
+    };
+    s.onerror = function() {
+      document.getElementById('pin-err').textContent = 'Erreur de chargement. Vérifiez votre connexion.';
+    };
     document.head.appendChild(s);
   }
 })();
@@ -227,8 +224,19 @@ async function tryLogin() {
   document.getElementById('login-btn').disabled = true;
   document.getElementById('login-btn').textContent = 'Connexion...';
 
+  // Wait for Supabase to finish loading if needed (max 6s)
   if (!sb) {
-    err.textContent = 'Connexion Supabase non disponible.';
+    var waited = 0;
+    await new Promise(function(resolve) {
+      var check = setInterval(function() {
+        waited += 200;
+        if (sb || waited >= 6000) { clearInterval(check); resolve(); }
+      }, 200);
+    });
+  }
+
+  if (!sb) {
+    err.textContent = 'Connexion impossible. Vérifiez votre connexion internet.';
     document.getElementById('login-btn').disabled = false;
     document.getElementById('login-btn').textContent = 'Entrer';
     return;

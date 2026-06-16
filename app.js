@@ -609,6 +609,7 @@ async function doScan() {
   box.style.display = 'block';
   detail.style.display = 'none';
   pendingTicketId = null;
+  pendingAction = null;
   box.className = 'scan-result';
 
   // Extract ticket ID — support plain ID, URL ?id=, or JSON
@@ -618,24 +619,34 @@ async function doScan() {
       id = val.split('?ID=')[1].split('&')[0].toUpperCase();
     } else if (val.indexOf('?id=') !== -1) {
       id = val.split('?id=')[1].split('&')[0].toUpperCase();
-    } else {
-      var p = JSON.parse(val); id = p.id.toUpperCase();
+    } else if (val.charAt(0) === '{') {
+      var p = JSON.parse(val); id = String(p.id).toUpperCase();
     }
   } catch(e) {}
 
-  if (!tickets[id]) {
+  var t = tickets[id];
+  if (!t) {
     box.className = 'scan-result invalid';
     box.textContent = id + ' — ticket inconnu dans le système.';
-  } else if (tickets[id].used) {
-    var t = tickets[id];
+  } else if (t.status === 'entered') {
+    // Already inside — reject
     box.className = 'scan-result used';
-    box.textContent = id + ' — déjà utilisé à ' + t.scanTime + '. Refuser l\'entrée.';
-    showTicketDetail(t, 'used');
-  } else {
+    box.textContent = id + ' — déjà entré à ' + (t.entryTime || t.scanTime) + '. Refuser l\'entrée.';
+    showTicketDetail(t, 'entered');
+  } else if (t.status === 'sold') {
+    // Second scan → confirm entry
     pendingTicketId = id;
+    pendingAction = 'enter';
     box.className = 'scan-result ok';
-    box.textContent = id + ' — ticket valide. Confirmez l\'entrée.';
-    showTicketDetail(tickets[id], 'pending');
+    box.textContent = id + ' — vendu. Confirmez l\'entrée du client.';
+    showTicketDetail(t, 'pending-enter');
+  } else {
+    // available → first scan → confirm sale
+    pendingTicketId = id;
+    pendingAction = 'sell';
+    box.className = 'scan-result ok';
+    box.textContent = id + ' — disponible. Confirmez la vente.';
+    showTicketDetail(t, 'pending-sell');
   }
   input.value = '';
   input.focus();
@@ -689,6 +700,7 @@ async function confirmEntry() {
 
 function cancelEntry() {
   pendingTicketId = null;
+  pendingAction = null;
   document.getElementById('ticket-detail').style.display = 'none';
   document.getElementById('scan-result').style.display = 'none';
   document.getElementById('scan-input').focus();

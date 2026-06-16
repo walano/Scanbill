@@ -565,7 +565,7 @@ function startCamera() {
       camStream = stream;
       var video = document.getElementById('cam-video');
       video.srcObject = stream;
-      document.getElementById('camera-wrap').style.display = 'block';
+      document.getElementById('camera-wrap').style.display = 'flex';
       document.getElementById('cam-btn').textContent = 'Arrêter';
       startQRDetection();
     })

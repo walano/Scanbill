@@ -17,8 +17,8 @@
       <button class="role-btn" id="btn-agent" onclick="selectRole('agent')">Agent scan</button>
     </div>
     <div class="field-group">
-      <label for="pin-input">Mot de passe</label>
-      <input type="password" id="pin-input" maxlength="30" placeholder="——————" autocomplete="off" onkeydown="if(event.key==='Enter')tryLogin()">
+      <label for="pin-input">PIN</label>
+      <input type="password" id="pin-input" maxlength="6" placeholder="——————" autocomplete="off" onkeydown="if(event.key==='Enter')tryLogin()">
       <span class="field-err" id="pin-err"></span>
     </div>
     <button class="btn-main" id="login-btn" onclick="tryLogin()">Entrer</button>
@@ -36,6 +36,9 @@
     </div>
   </header>
 
+  <!-- Mobile bottom nav — populated by JS based on role -->
+  <nav class="bottom-nav" id="bottom-nav"></nav>
+
   <main class="content">
 
     <!-- GENERATE -->
@@ -44,15 +47,15 @@
       <div class="form-grid">
         <div class="field-group">
           <label>Nom du concert</label>
-          <input type="text" id="concert-name" placeholder="">
+          <input type="text" id="concert-name" value="CONCERT GABON 2025">
         </div>
         <div class="field-group">
           <label>Préfixe</label>
-          <input type="text" id="ticket-prefix" placeholder="">
+          <input type="text" id="ticket-prefix" value="TKT">
         </div>
         <div class="field-group">
           <label>Nombre de tickets</label>
-          <input type="number" id="ticket-count" placeholder="" min="1" max="500">
+          <input type="number" id="ticket-count" value="10" min="1" max="500">
         </div>
         <div class="field-group">
           <label>Devise</label>
@@ -66,11 +69,11 @@
         <div class="price-grid">
           <div class="field-group">
             <label>Prix prévente</label>
-            <input type="number" id="price-presale" placeholder="">
+            <input type="number" id="price-presale" value="5000">
           </div>
           <div class="field-group">
             <label>Prix jour J</label>
-            <input type="number" id="price-door" placeholder="">
+            <input type="number" id="price-door" value="7000">
           </div>
           <div class="field-group">
             <label>Date du concert</label>
@@ -113,6 +116,11 @@
         <div class="stat-block">
           <span class="stat-val" id="stat-remaining">0</span>
           <span class="stat-lbl">Restants</span>
+        </div>
+        <div class="stat-sep"></div>
+        <div class="stat-block">
+          <span class="stat-val" id="stat-entered">0</span>
+          <span class="stat-lbl">Entrés</span>
         </div>
         <div class="stat-sep"></div>
         <div class="stat-block">
@@ -161,7 +169,7 @@
             <span class="td-val" id="td-access-status"></span>
           </div>
           <div class="td-confirm-row" id="td-confirm-row" style="display:none">
-            <button class="btn-main" onclick="confirmEntry()">Confirmer l'entrée</button>
+            <button class="btn-main" id="td-confirm-btn" onclick="confirmEntry()">Confirmer</button>
             <button class="btn-ghost" onclick="cancelEntry()">Annuler</button>
           </div>
         </div>

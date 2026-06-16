@@ -1,6 +1,6 @@
 // ── Config ──
 // Mets ton URL de déploiement ici — ex: 'https://scanbill.vercel.app'
-var SITE_URL = 'https://scanbill-ivory.vercel.app/';
+var SITE_URL = '';
 
 // ── Supabase config ──
 var SUPABASE_URL = 'https://xudwrqowcnqsggiizmhw.supabase.co';
@@ -83,7 +83,7 @@ async function dbInsertTickets(newTickets) {
     return {
       id: t.id, concert: t.concert, presale: t.presale, door: t.door,
       currency: t.currency, concert_date: t.concertDate, concert_time: t.concertTime,
-      used: false, scan_time: null, scanned_price: null, scanned_mode: null
+      used: false, status: 'available', scan_time: null, sold_time: null, entry_time: null, scanned_price: null, scanned_mode: null
     };
   });
   await sb.from('tickets').insert(rows);
@@ -98,16 +98,26 @@ async function dbLoadTickets() {
     map[r.id] = {
       id: r.id, concert: r.concert, presale: r.presale, door: r.door,
       currency: r.currency, concertDate: r.concert_date, concertTime: r.concert_time,
-      used: r.used, scanTime: r.scan_time, scannedPrice: r.scanned_price, scannedMode: r.scanned_mode
+      used: r.used, status: r.status || 'available',
+      scanTime: r.scan_time, soldTime: r.sold_time, entryTime: r.entry_time,
+      scannedPrice: r.scanned_price, scannedMode: r.scanned_mode
     };
   });
   return map;
 }
 
-async function dbMarkUsed(id, scanTime, scannedPrice, scannedMode) {
+async function dbMarkSold(id, soldTime, scannedPrice, scannedMode) {
   if (!sb) return;
   await sb.from('tickets').update({
-    used: true, scan_time: scanTime, scanned_price: scannedPrice, scanned_mode: scannedMode
+    status: 'sold', sold_time: soldTime, scan_time: soldTime,
+    scanned_price: scannedPrice, scanned_mode: scannedMode
+  }).eq('id', id);
+}
+
+async function dbMarkEntered(id, entryTime) {
+  if (!sb) return;
+  await sb.from('tickets').update({
+    status: 'entered', used: true, entry_time: entryTime, scan_time: entryTime
   }).eq('id', id);
 }
 
@@ -341,6 +351,29 @@ function switchTab(name, btn) {
   if (name !== 'scan') stopCamera();
 }
 
+function switchTabMobile(name) {
+  // Update bottom nav active state
+  ['generate','scan','registry'].forEach(function(t) {
+    var b = document.getElementById('bnav-' + t);
+    if (b) b.classList.toggle('active', t === name);
+  });
+  // Also update top tab nav
+  var topBtns = document.querySelectorAll('.tab-link');
+  var tabNames = currentRole === 'admin' ? ['generate','scan','registry'] : ['scan'];
+  topBtns.forEach(function(b, i) {
+    b.classList.toggle('active', tabNames[i] === name);
+  });
+  // Switch panel
+  document.querySelectorAll('.panel').forEach(function(p) { p.classList.remove('active'); });
+  var p = document.getElementById('panel-' + name);
+  if (p) p.classList.add('active');
+  if (name === 'scan') { loadAll().then(function() { updateStats(); updatePriceModeLabel(); }); }
+  if (name === 'registry') { loadAll().then(renderRegistry); }
+  if (name !== 'scan') stopCamera();
+  // Scroll to top
+  window.scrollTo(0, 0);
+}
+
 // ── Rebuild QR grid from loaded tickets ──
 function rebuildGrid() {
   var grid = document.getElementById('ticket-grid');
@@ -350,7 +383,16 @@ function rebuildGrid() {
   keys.forEach(function(num) {
     var t = tickets[num];
     var resolvedUrl = (concertMeta.siteUrl || SITE_URL || '').replace(/\/+$/, '');
-    var qrPayload = resolvedUrl ? (resolvedUrl + '/ticket.html?id=' + num) : num;
+    // Encode concert data in URL so client page works without DB/localStorage
+    var qrBase = resolvedUrl ? (resolvedUrl + '/ticket.html') : null;
+    var qrParams = '?id=' + encodeURIComponent(num)
+      + '&c=' + encodeURIComponent(name)
+      + '&p=' + presale
+      + '&d=' + door
+      + '&cur=' + encodeURIComponent(currency)
+      + (concertDate ? '&dt=' + concertDate : '')
+      + (concertTime ? '&tm=' + encodeURIComponent(concertTime) : '');
+    var qrPayload = qrBase ? (qrBase + qrParams) : num;
     var svgStr = window.makeQRSVG(qrPayload, 120);
     var div = document.createElement('div');
     div.className = 'ticket-card' + (t.used ? ' used' : '');
@@ -399,12 +441,21 @@ async function generateTickets() {
   var newTickets = [];
   for (var i = newFrom; i <= newTo; i++) {
     var num = prefix + '-' + String(i).padStart(3, '0');
-    var t = { id: num, presale: presale, door: door, currency: currency, concert: name, concertDate: concertDate, concertTime: concertTime, used: false, scanTime: null, scannedPrice: null, scannedMode: null };
+    var t = { id: num, presale: presale, door: door, currency: currency, concert: name, concertDate: concertDate, concertTime: concertTime, used: false, status: 'available', scanTime: null, soldTime: null, entryTime: null, scannedPrice: null, scannedMode: null };
     tickets[num] = t;
     newTickets.push(t);
 
     var resolvedUrl = siteUrl || '';
-    var qrPayload = resolvedUrl ? (resolvedUrl + '/ticket.html?id=' + num) : num;
+    // Encode concert data in URL so client page works without DB/localStorage
+    var qrBase = resolvedUrl ? (resolvedUrl + '/ticket.html') : null;
+    var qrParams = '?id=' + encodeURIComponent(num)
+      + '&c=' + encodeURIComponent(name)
+      + '&p=' + presale
+      + '&d=' + door
+      + '&cur=' + encodeURIComponent(currency)
+      + (concertDate ? '&dt=' + concertDate : '')
+      + (concertTime ? '&tm=' + encodeURIComponent(concertTime) : '');
+    var qrPayload = qrBase ? (qrBase + qrParams) : num;
     var svgStr = window.makeQRSVG(qrPayload, 120);
     var div = document.createElement('div');
     div.className = 'ticket-card';
@@ -426,7 +477,7 @@ async function generateTickets() {
 function confirmClear() {
   var total = Object.keys(tickets).length;
   if (total === 0) { clearTickets(); return; }
-  var used = Object.values(tickets).filter(function(t) { return t.used; }).length;
+  var used = Object.values(tickets).filter(function(t) { return t.status === 'sold' || t.status === 'entered'; }).length;
   var msg = 'Supprimer tous les tickets ?\n\n'
     + total + ' ticket(s) au total, dont ' + used + ' déjà utilisé(s).\n\n'
     + 'Cette action est irréversible.';
@@ -463,7 +514,15 @@ async function doZip() {
   var zip = new JSZip();
   var resolvedUrlZip = (concertMeta.siteUrl || SITE_URL || '').replace(/\/+$/, '');
   for (var i = 0; i < keys.length; i++) {
-    var qrPayloadZip = resolvedUrlZip ? (resolvedUrlZip + '/ticket.html?id=' + keys[i]) : keys[i];
+    var tZip = tickets[keys[i]];
+    var qrParamsZip = '?id=' + encodeURIComponent(keys[i])
+      + '&c=' + encodeURIComponent(tZip.concert || '')
+      + '&p=' + (tZip.presale || 0)
+      + '&d=' + (tZip.door || 0)
+      + '&cur=' + encodeURIComponent(tZip.currency || '')
+      + (tZip.concertDate ? '&dt=' + tZip.concertDate : '')
+      + (tZip.concertTime ? '&tm=' + encodeURIComponent(tZip.concertTime) : '');
+    var qrPayloadZip = resolvedUrlZip ? (resolvedUrlZip + '/ticket.html' + qrParamsZip) : keys[i];
     zip.file(keys[i] + '.svg', window.makeQRSVG(qrPayloadZip, 400));
     pf.style.width = Math.round((i + 1) / keys.length * 100) + '%';
     pl.textContent = (i + 1) + ' / ' + keys.length;
@@ -554,6 +613,7 @@ function loadJsQR(cb) {
 
 // ── Scan logic ──
 var pendingTicketId = null;
+var pendingAction = null;
 
 async function doScan() {
   var input = document.getElementById('scan-input');
@@ -601,34 +661,48 @@ async function doScan() {
 }
 
 async function confirmEntry() {
-  if (!pendingTicketId) return;
+  if (!pendingTicketId || !pendingAction) return;
   var id = pendingTicketId;
+  var action = pendingAction;
   var t = tickets[id];
-  if (!t || t.used) return;
+  if (!t) return;
 
   var now = new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
   var active = getActivePrice(t);
-  t.used = true;
-  t.scanTime = now;
-  t.scannedPrice = active.price;
-  t.scannedMode = active.mode;
-
-  if (sb) {
-    await dbMarkUsed(id, now, active.price, active.mode);
-  }
-  localSave();
-
-  scanLog.unshift({ id: id, time: now, price: active.price, currency: t.currency, mode: active.mode });
-
   var box = document.getElementById('scan-result');
-  box.className = 'scan-result ok';
-  box.textContent = id + ' — accès accordé · ' + active.price.toLocaleString() + ' ' + t.currency + ' · ' + now;
 
-  showTicketDetail(t, 'granted');
+  if (action === 'sell') {
+    t.status = 'sold';
+    t.soldTime = now;
+    t.scanTime = now;
+    t.scannedPrice = active.price;
+    t.scannedMode = active.mode;
+    if (sb) await dbMarkSold(id, now, active.price, active.mode);
+    localSave();
+    scanLog.unshift({ id: id, time: now, action: 'vendu', price: active.price, currency: t.currency, mode: active.mode });
+    box.className = 'scan-result ok';
+    box.textContent = id + ' — vendu · ' + active.price.toLocaleString() + ' ' + t.currency + ' · ' + now;
+    showTicketDetail(t, 'sold');
+    var tc = document.getElementById('tcard-' + id);
+    if (tc) tc.classList.add('sold');
+
+  } else if (action === 'enter') {
+    t.status = 'entered';
+    t.used = true;
+    t.entryTime = now;
+    t.scanTime = now;
+    if (sb) await dbMarkEntered(id, now);
+    localSave();
+    scanLog.unshift({ id: id, time: now, action: 'entré', price: t.scannedPrice || active.price, currency: t.currency, mode: t.scannedMode || active.mode });
+    box.className = 'scan-result ok';
+    box.textContent = id + ' — accès accordé · ' + now;
+    showTicketDetail(t, 'granted');
+    var tc2 = document.getElementById('tcard-' + id);
+    if (tc2) tc2.classList.add('used');
+  }
+
   pendingTicketId = null;
-
-  var tc = document.getElementById('tcard-' + id);
-  if (tc) tc.classList.add('used');
+  pendingAction = null;
   renderRecentScans();
   updateStats();
   document.getElementById('scan-input').focus();
@@ -647,27 +721,36 @@ function showTicketDetail(t, state) {
   document.getElementById('td-concert').textContent = t.concert;
   document.getElementById('td-num').textContent = t.id;
 
-  var priceToShow = (state === 'used' || state === 'granted') ? (t.scannedPrice || active.price) : active.price;
-  var modeToShow  = (state === 'used' || state === 'granted') ? (t.scannedMode  || active.mode)  : active.mode;
-
+  var priceToShow = t.scannedPrice || active.price;
+  var modeToShow  = t.scannedMode  || active.mode;
   document.getElementById('td-price').textContent = priceToShow.toLocaleString() + ' ' + t.currency;
   document.getElementById('td-mode').innerHTML = '<span class="' + (modeToShow === 'jour J' ? 'tag-door' : 'tag-presale') + '">' + modeToShow + '</span>';
 
   var accessRow = document.getElementById('td-access-row');
   var accessStatus = document.getElementById('td-access-status');
   var confirmRow = document.getElementById('td-confirm-row');
+  var confirmBtn = document.getElementById('td-confirm-btn');
 
-  if (state === 'pending') {
-    accessRow.style.display = 'none';
+  accessRow.style.display = 'none';
+  confirmRow.style.display = 'none';
+
+  if (state === 'pending-sell') {
+    confirmBtn.textContent = 'Confirmer la vente';
     confirmRow.style.display = 'flex';
+  } else if (state === 'pending-enter') {
+    accessRow.style.display = 'flex';
+    accessStatus.innerHTML = '<span class="tag-presale">vendu · ' + t.soldTime + '</span>';
+    confirmBtn.textContent = 'Confirmer l'accès';
+    confirmRow.style.display = 'flex';
+  } else if (state === 'sold') {
+    accessRow.style.display = 'flex';
+    accessStatus.innerHTML = '<span class="tag-presale">vendu · ' + t.soldTime + '</span>';
   } else if (state === 'granted') {
     accessRow.style.display = 'flex';
-    accessStatus.innerHTML = '<span class="tag-granted">accès accordé · ' + t.scanTime + '</span>';
-    confirmRow.style.display = 'none';
-  } else if (state === 'used') {
+    accessStatus.innerHTML = '<span class="tag-granted">accès accordé · ' + t.entryTime + '</span>';
+  } else if (state === 'entered') {
     accessRow.style.display = 'flex';
-    accessStatus.innerHTML = '<span class="tag-denied">refusé · déjà entré à ' + t.scanTime + '</span>';
-    confirmRow.style.display = 'none';
+    accessStatus.innerHTML = '<span class="tag-denied">refusé · déjà entré à ' + t.entryTime + '</span>';
   }
   detail.style.display = 'block';
 }
@@ -685,7 +768,7 @@ function renderRecentScans() {
   el.innerHTML = scanLog.slice(0, 8).map(function(s) {
     return '<div class="scan-log-row">' +
       '<span class="scan-log-id">' + s.id + '</span>' +
-      '<span class="scan-log-price">' + s.price.toLocaleString() + ' ' + s.currency + '</span>' +
+      '<span class="scan-log-price">' + (s.action || '') + '</span>' +
       '<span class="scan-log-time">' + s.time + '</span>' +
       '<span class="status-dot"></span>' +
       '</div>';
@@ -694,10 +777,12 @@ function renderRecentScans() {
 
 function updateStats() {
   var total = Object.keys(tickets).length;
-  var used = Object.values(tickets).filter(function(t) { return t.used; }).length;
+  var used = Object.values(tickets).filter(function(t) { return t.status === 'sold' || t.status === 'entered'; }).length;
   document.getElementById('stat-total').textContent = total;
-  document.getElementById('stat-used').textContent = used;
-  document.getElementById('stat-remaining').textContent = total - used;
+  document.getElementById('stat-used').textContent = sold;
+  document.getElementById('stat-remaining').textContent = total - sold;
+  var enteredEl = document.getElementById('stat-entered');
+  if (enteredEl) enteredEl.textContent = entered;
   updatePriceModeLabel();
 }
 
@@ -710,13 +795,17 @@ function renderRegistry() {
     return;
   }
   body.innerHTML = all.map(function(t) {
-    var priceDisplay = t.used
-      ? (t.scannedPrice || '—') + ' ' + t.currency + ' (' + (t.scannedMode || '') + ')'
-      : t.presale.toLocaleString() + ' ' + t.currency + ' (prévente)';
+    var st = t.status || 'available';
+    var statusLabel = st === 'available' ? 'disponible' : st === 'sold' ? 'vendu' : 'entré';
+    var statusClass = st === 'entered' ? 'status-used' : st === 'sold' ? 'status-sold' : 'status-ok';
+    var priceDisplay = t.scannedPrice
+      ? t.scannedPrice.toLocaleString() + ' ' + t.currency + ' (' + (t.scannedMode || '') + ')'
+      : t.presale.toLocaleString() + ' ' + t.currency;
+    var timeDisplay = t.entryTime || t.soldTime || '—';
     return '<tr>' +
       '<td>' + t.id + '</td>' +
-      '<td class="' + (t.used ? 'status-used' : 'status-ok') + '">' + (t.used ? 'utilisé' : 'disponible') + '</td>' +
-      '<td>' + (t.scanTime || '—') + '</td>' +
+      '<td class="' + statusClass + '">' + statusLabel + '</td>' +
+      '<td>' + timeDisplay + '</td>' +
       '<td>' + priceDisplay + '</td>' +
       '</tr>';
   }).join('');
@@ -725,9 +814,10 @@ function renderRegistry() {
 function exportCSV() {
   var all = Object.values(tickets);
   if (!all.length) return;
-  var rows = [['N° Ticket','Concert','Statut','Heure scan','Prix scanné','Mode tarif','Devise']];
+  var rows = [['N° Ticket','Concert','Statut','Heure vente','Heure entrée','Prix scanné','Mode tarif','Devise']];
   all.forEach(function(t) {
-    rows.push([t.id, t.concert, t.used ? 'utilisé' : 'disponible', t.scanTime || '', t.scannedPrice || '', t.scannedMode || '', t.currency]);
+    var st = t.status || 'available';
+    rows.push([t.id, t.concert, st, t.soldTime || '', t.entryTime || '', t.scannedPrice || '', t.scannedMode || '', t.currency]);
   });
   var csv = rows.map(function(r) { return r.join(','); }).join('\n');
   var blob = new Blob([csv], { type: 'text/csv' });

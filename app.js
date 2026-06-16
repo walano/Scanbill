@@ -329,7 +329,7 @@ function switchTab(name, btn) {
   document.querySelectorAll('.panel').forEach(function(p) { p.classList.remove('active'); });
   var p = document.getElementById('panel-' + name);
   if (p) p.classList.add('active');
-  if (name === 'scan') { loadAll().then(function() { updateStats(); updatePriceModeLabel(); }); }
+  if (name === 'scan') { loadAll().then(function() { updateStats(); updatePriceModeLabel(); renderRecentScans(); }); }
   if (name === 'registry') { loadAll().then(renderRegistry); }
   if (name !== 'scan') stopCamera();
 }
@@ -350,7 +350,7 @@ function switchTabMobile(name) {
   document.querySelectorAll('.panel').forEach(function(p) { p.classList.remove('active'); });
   var p = document.getElementById('panel-' + name);
   if (p) p.classList.add('active');
-  if (name === 'scan') { loadAll().then(function() { updateStats(); updatePriceModeLabel(); }); }
+  if (name === 'scan') { loadAll().then(function() { updateStats(); updatePriceModeLabel(); renderRecentScans(); }); }
   if (name === 'registry') { loadAll().then(renderRegistry); }
   if (name !== 'scan') stopCamera();
   // Scroll to top
@@ -753,10 +753,26 @@ function updatePriceModeLabel() {
   document.getElementById('stat-price-mode').textContent = active.price.toLocaleString() + ' ' + (meta.currency || '');
 }
 
+function scanTimeSecs(s) {
+  if (!s) return -1;
+  var p = String(s).split(':');
+  return (+p[0] || 0) * 3600 + (+p[1] || 0) * 60 + (+p[2] || 0);
+}
+
 function renderRecentScans() {
   var el = document.getElementById('recent-scans');
-  if (!scanLog.length) { el.innerHTML = '<p class="empty-state">Aucun scan pour l\'instant</p>'; return; }
-  el.innerHTML = scanLog.slice(0, 8).map(function(s) {
+  if (!el) return;
+  // Derive from tickets (Supabase) so recent scans survive a refresh and are
+  // visible on every device/account, not just the one that scanned.
+  var ev = [];
+  Object.keys(tickets).forEach(function(k) {
+    var t = tickets[k];
+    if (t.soldTime)  ev.push({ id: t.id, action: 'vendu', time: t.soldTime });
+    if (t.entryTime) ev.push({ id: t.id, action: 'entré', time: t.entryTime });
+  });
+  ev.sort(function(a, b) { return scanTimeSecs(b.time) - scanTimeSecs(a.time); });
+  if (!ev.length) { el.innerHTML = '<p class="empty-state">Aucun scan pour l\'instant</p>'; return; }
+  el.innerHTML = ev.slice(0, 8).map(function(s) {
     return '<div class="scan-log-row">' +
       '<span class="scan-log-id">' + s.id + '</span>' +
       '<span class="scan-log-price">' + (s.action || '') + '</span>' +

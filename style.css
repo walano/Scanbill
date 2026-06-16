@@ -119,7 +119,7 @@ input:focus, select:focus { border-color: var(--black); }
   display: flex; flex-direction: column; align-items: center; gap: 1rem;
 }
 .cam-frame {
-  width: 220px; height: 220px;
+  width: min(82vw, 340px); height: min(82vw, 340px);
   border: 2px solid rgba(255,255,255,0.9);
   box-shadow: 0 0 0 9999px rgba(0,0,0,0.5);
   position: relative;
@@ -134,7 +134,9 @@ input:focus, select:focus { border-color: var(--black); }
 .cam-hint { font-size: 0.8rem; color: rgba(255,255,255,0.8); text-align: center; }
 .camera-wrap .btn-ghost {
   color: white; border-color: rgba(255,255,255,0.4);
-  background: rgba(0,0,0,0.4); margin-top: 0;
+  background: rgba(0,0,0,0.55); margin-top: 0;
+  position: absolute; left: 50%; transform: translateX(-50%);
+  bottom: calc(1.5rem + env(safe-area-inset-bottom)); z-index: 3;
 }
 
 /* Ticket detail */

@@ -551,12 +551,25 @@ async function doZip() {
 }
 
 // ── Camera ──
+// Keep-alive: the MediaStream is requested once per page load and kept open
+// between scans (only detection pauses + overlay hides). getUserMedia — and
+// thus the permission prompt — fires only once. Full release happens on tab
+// change / logout via stopCamera().
 function toggleCamera() {
   var wrap = document.getElementById('camera-wrap');
-  if (wrap.style.display === 'none' || !wrap.style.display) { startCamera(); } else { stopCamera(); }
+  if (wrap.style.display === 'none' || !wrap.style.display) { startCamera(); } else { pauseCamera(); }
 }
 
 function startCamera() {
+  // Reuse an already-open stream — instant reopen, no second prompt
+  if (camStream && camStream.active) {
+    var v = document.getElementById('cam-video');
+    if (v.srcObject !== camStream) v.srcObject = camStream;
+    document.getElementById('camera-wrap').style.display = 'flex';
+    document.getElementById('cam-btn').textContent = 'Arrêter';
+    startQRDetection();
+    return;
+  }
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
     alert('Caméra non disponible sur cet appareil ou navigateur.'); return;
   }
@@ -572,6 +585,16 @@ function startCamera() {
     .catch(function(err) { alert('Impossible d\'accéder à la caméra : ' + err.message); });
 }
 
+// Hide overlay + stop detection but KEEP the stream alive (no re-prompt next open)
+function pauseCamera() {
+  if (camInterval) { clearInterval(camInterval); camInterval = null; }
+  var wrap = document.getElementById('camera-wrap');
+  if (wrap) wrap.style.display = 'none';
+  var btn = document.getElementById('cam-btn');
+  if (btn) btn.textContent = 'Caméra';
+}
+
+// Full release — stops the camera hardware (used on tab change / logout)
 function stopCamera() {
   if (camStream) { camStream.getTracks().forEach(function(t) { t.stop(); }); camStream = null; }
   if (camInterval) { clearInterval(camInterval); camInterval = null; }
@@ -590,7 +613,7 @@ function startQRDetection() {
         detector.detect(video).then(function(codes) {
           if (codes.length > 0) {
             document.getElementById('scan-input').value = codes[0].rawValue;
-            stopCamera(); doScan();
+            pauseCamera(); doScan();
           }
         }).catch(function() {});
       }
@@ -608,7 +631,7 @@ function startQRDetection() {
           var code = window.jsQR(imgData.data, imgData.width, imgData.height, { inversionAttempts: 'dontInvert' });
           if (code) {
             document.getElementById('scan-input').value = code.data;
-            stopCamera(); doScan();
+            pauseCamera(); doScan();
           }
         }
       }, 300);

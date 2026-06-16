@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Scanbill</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<div class="login-wrap" id="app-login">
+  <div class="login-box">
+    <div class="wordmark">Scanbill</div>
+    <p class="tagline">Système de billetterie à scan</p>
+    <div class="role-row">
+      <button class="role-btn active" id="btn-admin" onclick="selectRole('admin')">Organisateur</button>
+      <button class="role-btn" id="btn-agent" onclick="selectRole('agent')">Agent scan</button>
+    </div>
+    <div class="field-group">
+      <label for="pin-input">PIN</label>
+      <input type="password" id="pin-input" maxlength="6" placeholder="——————" autocomplete="off" onkeydown="if(event.key==='Enter')tryLogin()">
+      <span class="field-err" id="pin-err"></span>
+    </div>
+    <button class="btn-main" id="login-btn" onclick="tryLogin()">Entrer</button>
+    
+  </div>
+</div>
+
+<div class="shell" id="app-shell" style="display:none">
+  <header class="topbar">
+    <span class="wordmark-sm">Scanbill</span>
+    <nav class="tab-nav" id="tab-nav"></nav>
+    <div class="topbar-right">
+      <span class="role-tag" id="role-tag"></span>
+      <button class="btn-ghost" onclick="logout()">Quitter</button>
+    </div>
+  </header>
+
+  <main class="content">
+
+    <!-- GENERATE -->
+    <section class="panel" id="panel-generate">
+      <div class="panel-head"><h1>Générer des tickets</h1></div>
+      <div class="form-grid">
+        <div class="field-group">
+          <label>Nom du concert</label>
+          <input type="text" id="concert-name" value="CONCERT GABON 2025">
+        </div>
+        <div class="field-group">
+          <label>Préfixe</label>
+          <input type="text" id="ticket-prefix" value="TKT">
+        </div>
+        <div class="field-group">
+          <label>Nombre de tickets</label>
+          <input type="number" id="ticket-count" value="10" min="1" max="500">
+        </div>
+        <div class="field-group">
+          <label>Devise</label>
+          <select id="currency"></select>
+        </div>
+
+      </div>
+
+      <div class="pricing-block">
+        <p class="block-label">Tarification</p>
+        <div class="price-grid">
+          <div class="field-group">
+            <label>Prix prévente</label>
+            <input type="number" id="price-presale" value="5000">
+          </div>
+          <div class="field-group">
+            <label>Prix jour J</label>
+            <input type="number" id="price-door" value="7000">
+          </div>
+          <div class="field-group">
+            <label>Date du concert</label>
+            <input type="date" id="concert-date">
+          </div>
+          <div class="field-group">
+            <label>Heure bascule jour J</label>
+            <input type="time" id="concert-time" value="00:00">
+          </div>
+        </div>
+        <div class="price-preview" id="price-preview"></div>
+      </div>
+
+      <div class="action-row">
+        <button class="btn-main" onclick="generateTickets()">Générer</button>
+        <button class="btn-danger" onclick="confirmClear()">Vider tout</button>
+        <button class="btn-ghost" id="dl-btn" style="display:none" onclick="downloadAllZip()">Télécharger ZIP</button>
+      </div>
+      <div class="progress-bar-wrap" id="progress-wrap" style="display:none">
+        <div class="progress-track"><div class="progress-fill" id="progress-fill"></div></div>
+        <span class="progress-lbl" id="progress-lbl"></span>
+      </div>
+      <div class="ticket-grid" id="ticket-grid"></div>
+    </section>
+
+    <!-- SCAN -->
+    <section class="panel" id="panel-scan">
+      <div class="panel-head"><h1>Scanner</h1></div>
+      <div class="stats-row">
+        <div class="stat-block">
+          <span class="stat-val" id="stat-total">0</span>
+          <span class="stat-lbl">Tickets</span>
+        </div>
+        <div class="stat-sep"></div>
+        <div class="stat-block">
+          <span class="stat-val" id="stat-used">0</span>
+          <span class="stat-lbl">Validés</span>
+        </div>
+        <div class="stat-sep"></div>
+        <div class="stat-block">
+          <span class="stat-val" id="stat-remaining">0</span>
+          <span class="stat-lbl">Restants</span>
+        </div>
+        <div class="stat-sep"></div>
+        <div class="stat-block">
+          <span class="stat-val" id="stat-price-mode">—</span>
+          <span class="stat-lbl">Tarif actif</span>
+        </div>
+      </div>
+
+      <div class="scan-block">
+        <div class="scan-row">
+          <input type="text" id="scan-input" placeholder="Numéro de ticket" onkeydown="if(event.key==='Enter')doScan()">
+          <button class="btn-main" onclick="doScan()">Valider</button>
+          <button class="btn-ghost" id="cam-btn" onclick="toggleCamera()">Caméra</button>
+        </div>
+
+        <!-- Camera viewfinder -->
+        <div class="camera-wrap" id="camera-wrap" style="display:none">
+          <video id="cam-video" autoplay playsinline muted></video>
+          <div class="cam-overlay">
+            <div class="cam-frame"></div>
+          </div>
+          <canvas id="cam-canvas" style="display:none"></canvas>
+          <p class="cam-hint">Pointez le QR code dans le cadre</p>
+          <button class="btn-ghost" style="margin-top:0.75rem" onclick="stopCamera()">Fermer la caméra</button>
+        </div>
+
+        <div id="scan-result" class="scan-result" style="display:none"></div>
+
+        <!-- Ticket detail card shown after scan -->
+        <div class="ticket-detail" id="ticket-detail" style="display:none">
+          <div class="td-concert" id="td-concert"></div>
+          <div class="td-row">
+            <span class="td-label">N° ticket</span>
+            <span class="td-val mono" id="td-num"></span>
+          </div>
+          <div class="td-row">
+            <span class="td-label">Tarif</span>
+            <span class="td-val" id="td-price"></span>
+          </div>
+          <div class="td-row">
+            <span class="td-label">Mode</span>
+            <span class="td-val" id="td-mode"></span>
+          </div>
+          <div class="td-row" id="td-access-row" style="display:none">
+            <span class="td-label">Accès</span>
+            <span class="td-val" id="td-access-status"></span>
+          </div>
+          <div class="td-confirm-row" id="td-confirm-row" style="display:none">
+            <button class="btn-main" onclick="confirmEntry()">Confirmer l'entrée</button>
+            <button class="btn-ghost" onclick="cancelEntry()">Annuler</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="recent-block">
+        <p class="block-label">Derniers scans</p>
+        <div id="recent-scans"><p class="empty-state">Aucun scan pour l'instant</p></div>
+      </div>
+    </section>
+
+    <!-- REGISTRY -->
+    <section class="panel" id="panel-registry">
+      <div class="panel-head">
+        <h1>Registre</h1>
+        <button class="btn-ghost" onclick="exportCSV()">Export CSV</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>N° Ticket</th><th>Statut</th><th>Heure</th><th>Prix scanné</th></tr>
+          </thead>
+          <tbody id="registry-body">
+            <tr><td colspan="4" class="empty-state">Génère des tickets d'abord</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<script src="qr.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

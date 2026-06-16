@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mon ticket — Scanbill</title>
+<link rel="stylesheet" href="style.css">
+<style>
+  .ticket-page { min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 2rem; }
+  .ticket-wrap { width: 100%; max-width: 380px; }
+  .ticket-header { margin-bottom: 2rem; }
+  .ticket-header .wordmark { font-size: 1rem; margin-bottom: 1.5rem; color: var(--gray-400); }
+  .concert-name { font-family: var(--mono); font-size: 1.3rem; font-weight: 500; letter-spacing: -0.02em; line-height: 1.2; margin-bottom: 0.25rem; }
+  .concert-date-line { font-size: 0.8rem; color: var(--gray-600); margin-bottom: 0; }
+
+  .ticket-body { border: 1px solid var(--gray-200); }
+  .ticket-qr-block { padding: 1.5rem; display: flex; justify-content: center; border-bottom: 1px solid var(--gray-200); background: var(--gray-100); }
+  .ticket-qr-block svg { display: block; }
+
+  .ticket-fields { }
+  .ticket-field { display: flex; justify-content: space-between; align-items: baseline; padding: 0.75rem 1rem; border-bottom: 1px solid var(--gray-200); }
+  .ticket-field:last-child { border-bottom: none; }
+  .tf-label { font-size: 0.72rem; font-weight: 500; text-transform: uppercase; letter-spacing: 0.05em; color: var(--gray-600); }
+  .tf-val { font-family: var(--mono); font-size: 0.85rem; font-weight: 500; text-align: right; }
+
+  .ticket-status-block { margin-top: 0; border-top: 2px solid var(--black); padding: 0.75rem 1rem; display: flex; justify-content: space-between; align-items: center; }
+  .ticket-status-block.status-available { border-top-color: var(--black); }
+  .ticket-status-block.status-used { border-top-color: #c00; }
+  .ts-label { font-size: 0.72rem; font-weight: 500; text-transform: uppercase; letter-spacing: 0.05em; color: var(--gray-600); }
+  .ts-val { font-family: var(--mono); font-size: 0.85rem; font-weight: 500; }
+  .ts-val.ok { color: var(--black); }
+  .ts-val.used { color: #c00; }
+
+  .ticket-footer { margin-top: 1.5rem; font-size: 0.72rem; color: var(--gray-400); text-align: center; font-family: var(--mono); }
+
+  .error-state { text-align: center; padding: 3rem 1rem; }
+  .error-state .wordmark { font-size: 1rem; color: var(--gray-400); margin-bottom: 2rem; }
+  .error-state p { font-family: var(--mono); font-size: 0.85rem; color: var(--gray-600); }
+
+  .loading { text-align: center; padding: 3rem; font-family: var(--mono); font-size: 0.85rem; color: var(--gray-400); }
+</style>
+</head>
+<body>
+
+<div class="ticket-page">
+  <div class="ticket-wrap">
+    <div id="state-loading" class="loading">chargement...</div>
+    <div id="state-error" class="error-state" style="display:none">
+      <div class="wordmark">Scanbill</div>
+      <p id="error-msg">Ticket introuvable.</p>
+    </div>
+    <div id="state-ticket" style="display:none">
+      <div class="ticket-header">
+        <div class="wordmark">Scanbill</div>
+        <div class="concert-name" id="t-concert"></div>
+        <div class="concert-date-line" id="t-date"></div>
+      </div>
+      <div class="ticket-body">
+        <div class="ticket-qr-block" id="t-qr"></div>
+        <div class="ticket-fields">
+          <div class="ticket-field">
+            <span class="tf-label">N° ticket</span>
+            <span class="tf-val" id="t-num"></span>
+          </div>
+          <div class="ticket-field">
+            <span class="tf-label">Tarif</span>
+            <span class="tf-val" id="t-price"></span>
+          </div>
+          <div class="ticket-field">
+            <span class="tf-label">Mode</span>
+            <span class="tf-val" id="t-mode"></span>
+          </div>
+        </div>
+        <div class="ticket-status-block" id="t-status-block">
+          <span class="ts-label">Statut</span>
+          <span class="ts-val" id="t-status"></span>
+        </div>
+      </div>
+      <div class="ticket-footer" id="t-footer">Présentez ce ticket à l'entrée</div>
+    </div>
+  </div>
+</div>
+
+<script src="qr.js"></script>
+<script>
+var SITE_URL = ''; // même valeur que dans app.js
+var STORAGE_KEY = 'scanbill_tickets';
+var META_KEY = 'scanbill_meta';
+
+function getParam(name) {
+  var url = window.location.search;
+  var re = new RegExp('[?&]' + name + '=([^&]*)');
+  var m = url.match(re);
+  return m ? decodeURIComponent(m[1]) : null;
+}
+
+function getActivePrice(t) {
+  if (!t.concertDate) return { price: t.presale, mode: 'prévente' };
+  var now = new Date();
+  var switchDT = new Date(t.concertDate + 'T' + (t.concertTime || '00:00') + ':00');
+  return now >= switchDT
+    ? { price: t.door, mode: 'jour J' }
+    : { price: t.presale, mode: 'prévente' };
+}
+
+function formatDate(dateStr, timeStr) {
+  if (!dateStr) return '';
+  var d = new Date(dateStr + 'T' + (timeStr || '00:00') + ':00');
+  return d.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+}
+
+(function load() {
+  var id = (getParam('id') || '').toUpperCase();
+  if (!id) { showError('Aucun identifiant de ticket fourni.'); return; }
+
+  var tickets = {};
+  var meta = {};
+  try {
+    var raw = localStorage.getItem(STORAGE_KEY);
+    var rawMeta = localStorage.getItem(META_KEY);
+    if (raw) tickets = JSON.parse(raw);
+    if (rawMeta) meta = JSON.parse(rawMeta);
+  } catch(e) {}
+
+  var t = tickets[id];
+  if (!t) { showError('Ticket « ' + id + ' » introuvable dans ce système.'); return; }
+
+  // Concert info
+  document.getElementById('t-concert').textContent = t.concert;
+  document.getElementById('t-date').textContent = formatDate(t.concertDate, t.concertTime);
+
+  // QR code (re-encode the same payload)
+  var siteUrl = (meta.siteUrl || SITE_URL || '').replace(/\/+$/, '');
+  var qrPayload = siteUrl ? (siteUrl + '/ticket.html?id=' + id) : id;
+  var svgStr = window.makeQRSVG(qrPayload, 180);
+  document.getElementById('t-qr').innerHTML = svgStr;
+
+  // Ticket number
+  document.getElementById('t-num').textContent = id;
+
+  // Price — show active price at time of viewing
+  var active = getActivePrice(t);
+  document.getElementById('t-price').textContent = active.price.toLocaleString() + ' ' + t.currency;
+  document.getElementById('t-mode').textContent = active.mode;
+
+  // Status
+  var statusBlock = document.getElementById('t-status-block');
+  var statusEl = document.getElementById('t-status');
+  var footer = document.getElementById('t-footer');
+  if (t.used) {
+    statusBlock.className = 'ticket-status-block status-used';
+    statusEl.className = 'ts-val used';
+    statusEl.textContent = 'utilisé · ' + t.scanTime;
+    footer.textContent = 'Ce ticket a déjà été utilisé pour entrer.';
+  } else {
+    statusBlock.className = 'ticket-status-block status-available';
+    statusEl.className = 'ts-val ok';
+    statusEl.textContent = 'valide';
+    footer.textContent = 'Présentez ce ticket à l\'entrée.';
+  }
+
+  document.getElementById('state-loading').style.display = 'none';
+  document.getElementById('state-ticket').style.display = 'block';
+  document.title = id + ' — Scanbill';
+})();
+
+function showError(msg) {
+  document.getElementById('state-loading').style.display = 'none';
+  document.getElementById('error-msg').textContent = msg;
+  document.getElementById('state-error').style.display = 'block';
+}
+</script>
+</body>
+</html>

@@ -369,12 +369,12 @@ function rebuildGrid() {
     // Encode concert data in QR URL params for client page
     var qrBase = resolvedUrl ? (resolvedUrl + '/ticket.html') : null;
     var qrParams = '?id=' + encodeURIComponent(num)
-      + '&c=' + encodeURIComponent(name)
-      + '&p=' + presale
-      + '&d=' + door
-      + '&cur=' + encodeURIComponent(currency)
-      + (concertDate ? '&dt=' + concertDate : '')
-      + (concertTime ? '&tm=' + encodeURIComponent(concertTime) : '');
+      + '&c=' + encodeURIComponent(t.concert || '')
+      + '&p=' + (t.presale || 0)
+      + '&d=' + (t.door || 0)
+      + '&cur=' + encodeURIComponent(t.currency || '')
+      + (t.concertDate ? '&dt=' + t.concertDate : '')
+      + (t.concertTime ? '&tm=' + encodeURIComponent(t.concertTime) : '');
     var qrPayload = qrBase ? (qrBase + qrParams) : num;
     var svgStr = window.makeQRSVG(qrPayload, 120);
     var div = document.createElement('div');

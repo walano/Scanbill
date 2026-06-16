@@ -719,7 +719,7 @@ function showTicketDetail(t, state) {
   } else if (state === 'pending-enter') {
     accessRow.style.display = 'flex';
     accessStatus.innerHTML = '<span class="tag-presale">vendu · ' + t.soldTime + '</span>';
-    confirmBtn.textContent = 'Confirmer l'accès';
+    confirmBtn.textContent = "Confirmer l'accès";
     confirmRow.style.display = 'flex';
   } else if (state === 'sold') {
     accessRow.style.display = 'flex';
@@ -756,7 +756,8 @@ function renderRecentScans() {
 
 function updateStats() {
   var total = Object.keys(tickets).length;
-  var used = Object.values(tickets).filter(function(t) { return t.status === 'sold' || t.status === 'entered'; }).length;
+  var sold = Object.values(tickets).filter(function(t) { return t.status === 'sold' || t.status === 'entered'; }).length;
+  var entered = Object.values(tickets).filter(function(t) { return t.status === 'entered'; }).length;
   document.getElementById('stat-total').textContent = total;
   document.getElementById('stat-used').textContent = sold;
   document.getElementById('stat-remaining').textContent = total - sold;

@@ -752,11 +752,13 @@ function showTicketDetail(t, state) {
 
   if (state === 'pending-sell') {
     confirmBtn.textContent = 'Confirmer la vente';
+    confirmBtn.classList.add('sell');
     confirmRow.style.display = 'flex';
   } else if (state === 'pending-enter') {
     accessRow.style.display = 'flex';
     accessStatus.innerHTML = '<span class="tag-presale">vendu · ' + t.soldTime + '</span>';
     confirmBtn.textContent = "Confirmer l'accès";
+    confirmBtn.classList.remove('sell');
     confirmRow.style.display = 'flex';
   } else if (state === 'sold') {
     accessRow.style.display = 'flex';

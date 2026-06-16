@@ -151,6 +151,8 @@ input:focus, select:focus { border-color: var(--black); }
 .td-confirm-row .btn-main, .td-confirm-row .btn-ghost { flex: 1; }
 #td-confirm-btn { background: #16a34a; border-color: #16a34a; color: var(--white); }
 #td-confirm-btn:hover { background: #15803d; border-color: #15803d; opacity: 1; }
+#td-confirm-btn.sell { background: #d4af37; border-color: #d4af37; color: var(--black); }
+#td-confirm-btn.sell:hover { background: #c19b2e; border-color: #c19b2e; opacity: 1; }
 .tag-granted { font-size: 0.7rem; padding: 0.15rem 0.5rem; border: 1px solid var(--black); color: var(--black); font-family: var(--mono); }
 .tag-denied { font-size: 0.7rem; padding: 0.15rem 0.5rem; border: 1px solid #c00; color: #c00; font-family: var(--mono); }
 

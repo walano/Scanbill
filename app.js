@@ -305,20 +305,43 @@ async function saveAll() {
 }
 
 // ── Shell setup ──
+var NAV_ICONS = {
+  generate: '<svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>',
+  scan: '<svg viewBox="0 0 24 24"><path d="M3 7V5a2 2 0 0 1 2-2h2M17 3h2a2 2 0 0 1 2 2v2M21 17v2a2 2 0 0 1-2 2h-2M7 21H5a2 2 0 0 1-2-2v-2"/><line x1="3" y1="12" x2="21" y2="12"/></svg>',
+  registry: '<svg viewBox="0 0 24 24"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>',
+  stats: '<svg viewBox="0 0 24 24"><line x1="6" y1="20" x2="6" y2="12"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="18" y1="20" x2="18" y2="14"/></svg>'
+};
+
+function tabBtn(name, label, active) {
+  return '<button class="tab-link' + (active ? ' active' : '') + '" onclick="switchTab(\'' + name + '\',this)">' + label + '</button>';
+}
+function bnavBtn(name, label, active) {
+  return '<button class="bottom-nav-btn' + (active ? ' active' : '') + '" id="bnav-' + name + '" onclick="switchTabMobile(\'' + name + '\')">' + NAV_ICONS[name] + '<span>' + label + '</span></button>';
+}
+
 function setupShell() {
   var tag = document.getElementById('role-tag');
   var nav = document.getElementById('tab-nav');
+  var bnav = document.getElementById('bottom-nav');
   tag.textContent = currentRole === 'admin' ? 'Organisateur' : 'Agent scan';
 
+  var statsRow = document.getElementById('stats-row');
+
   if (currentRole === 'admin') {
-    nav.innerHTML =
-      '<button class="tab-link active" onclick="switchTab(\'generate\',this)">Générer</button>' +
-      '<button class="tab-link" onclick="switchTab(\'scan\',this)">Scanner</button>' +
-      '<button class="tab-link" onclick="switchTab(\'registry\',this)">Registre</button>';
+    // Stats header lives in the Registre tab for the organiser
+    var regSlot = document.querySelector('#panel-registry .table-wrap');
+    if (statsRow && regSlot) document.getElementById('panel-registry').insertBefore(statsRow, regSlot);
+
+    nav.innerHTML = tabBtn('generate', 'Générer', true) + tabBtn('scan', 'Scanner') + tabBtn('registry', 'Registre');
+    bnav.innerHTML = bnavBtn('generate', 'Générer', true) + bnavBtn('scan', 'Scanner') + bnavBtn('registry', 'Registre');
     rebuildGrid();
     switchTab('generate', nav.children[0]);
   } else {
-    nav.innerHTML = '<button class="tab-link active" onclick="switchTab(\'scan\',this)">Scanner</button>';
+    // Agent: stats header lives in its own Statistiques tab
+    if (statsRow) document.getElementById('stats-slot').appendChild(statsRow);
+
+    nav.innerHTML = tabBtn('scan', 'Scanner', true) + tabBtn('stats', 'Statistiques');
+    bnav.innerHTML = bnavBtn('scan', 'Scanner', true) + bnavBtn('stats', 'Statistiques');
     switchTab('scan', nav.children[0]);
   }
 }
@@ -330,19 +353,20 @@ function switchTab(name, btn) {
   var p = document.getElementById('panel-' + name);
   if (p) p.classList.add('active');
   if (name === 'scan') { loadAll().then(function() { updateStats(); updatePriceModeLabel(); renderRecentScans(); }); }
+  if (name === 'stats') { loadAll().then(function() { updateStats(); updatePriceModeLabel(); }); }
   if (name === 'registry') { loadAll().then(renderRegistry); }
   if (name !== 'scan') stopCamera();
 }
 
 function switchTabMobile(name) {
+  var tabNames = currentRole === 'admin' ? ['generate','scan','registry'] : ['scan','stats'];
   // Update bottom nav active state
-  ['generate','scan','registry'].forEach(function(t) {
+  tabNames.forEach(function(t) {
     var b = document.getElementById('bnav-' + t);
     if (b) b.classList.toggle('active', t === name);
   });
   // Also update top tab nav
   var topBtns = document.querySelectorAll('.tab-link');
-  var tabNames = currentRole === 'admin' ? ['generate','scan','registry'] : ['scan'];
   topBtns.forEach(function(b, i) {
     b.classList.toggle('active', tabNames[i] === name);
   });
@@ -351,6 +375,7 @@ function switchTabMobile(name) {
   var p = document.getElementById('panel-' + name);
   if (p) p.classList.add('active');
   if (name === 'scan') { loadAll().then(function() { updateStats(); updatePriceModeLabel(); renderRecentScans(); }); }
+  if (name === 'stats') { loadAll().then(function() { updateStats(); updatePriceModeLabel(); }); }
   if (name === 'registry') { loadAll().then(renderRegistry); }
   if (name !== 'scan') stopCamera();
   // Scroll to top
@@ -795,13 +820,52 @@ function updateStats() {
 }
 
 // ── Registry ──
+var registrySort = { key: 'time', dir: 'desc' };
+var STATUS_RANK = { available: 0, sold: 1, entered: 2 };
+
+function regDate(d) {
+  if (!d) return '';
+  var p = String(d).split('-');
+  return p.length === 3 ? p[2] + '/' + p[1] + '/' + p[0] : d;
+}
+
+function sortRegistry(key) {
+  if (registrySort.key === key) {
+    registrySort.dir = registrySort.dir === 'asc' ? 'desc' : 'asc';
+  } else {
+    registrySort.key = key;
+    registrySort.dir = 'asc';
+  }
+  renderRegistry();
+}
+
+function updateSortIndicators() {
+  var arrow = registrySort.dir === 'asc' ? '▲' : '▼';
+  var s = document.getElementById('sort-ind-status');
+  var t = document.getElementById('sort-ind-time');
+  if (s) s.textContent = registrySort.key === 'status' ? arrow : '';
+  if (t) t.textContent = registrySort.key === 'time' ? arrow : '';
+}
+
 function renderRegistry() {
   var body = document.getElementById('registry-body');
   var all = Object.values(tickets);
   if (!all.length) {
     body.innerHTML = '<tr><td colspan="4" class="empty-state">Génère des tickets d\'abord</td></tr>';
+    updateSortIndicators();
     return;
   }
+  all.sort(function(a, b) {
+    var av, bv;
+    if (registrySort.key === 'status') {
+      av = STATUS_RANK[a.status || 'available']; bv = STATUS_RANK[b.status || 'available'];
+    } else {
+      av = scanTimeSecs(a.entryTime || a.soldTime); bv = scanTimeSecs(b.entryTime || b.soldTime);
+    }
+    if (av === bv) return a.id < b.id ? -1 : 1; // stable tiebreak by ticket id
+    var cmp = av < bv ? -1 : 1;
+    return registrySort.dir === 'asc' ? cmp : -cmp;
+  });
   body.innerHTML = all.map(function(t) {
     var st = t.status || 'available';
     var statusLabel = st === 'available' ? 'disponible' : st === 'sold' ? 'vendu' : 'entré';
@@ -809,7 +873,8 @@ function renderRegistry() {
     var priceDisplay = t.scannedPrice
       ? t.scannedPrice.toLocaleString() + ' ' + t.currency + ' (' + (t.scannedMode || '') + ')'
       : t.presale.toLocaleString() + ' ' + t.currency;
-    var timeDisplay = t.entryTime || t.soldTime || '—';
+    var scanT = t.entryTime || t.soldTime;
+    var timeDisplay = scanT ? ((t.concertDate ? regDate(t.concertDate) + ' · ' : '') + scanT) : '—';
     return '<tr>' +
       '<td>' + t.id + '</td>' +
       '<td class="' + statusClass + '">' + statusLabel + '</td>' +
@@ -817,6 +882,7 @@ function renderRegistry() {
       '<td>' + priceDisplay + '</td>' +
       '</tr>';
   }).join('');
+  updateSortIndicators();
 }
 
 function exportCSV() {

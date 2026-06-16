@@ -102,32 +102,6 @@
     <!-- SCAN -->
     <section class="panel" id="panel-scan">
       <div class="panel-head"><h1>Scanner</h1></div>
-      <div class="stats-row">
-        <div class="stat-block">
-          <span class="stat-val" id="stat-total">0</span>
-          <span class="stat-lbl">Tickets</span>
-        </div>
-        <div class="stat-sep"></div>
-        <div class="stat-block">
-          <span class="stat-val" id="stat-used">0</span>
-          <span class="stat-lbl">Validés</span>
-        </div>
-        <div class="stat-sep"></div>
-        <div class="stat-block">
-          <span class="stat-val" id="stat-remaining">0</span>
-          <span class="stat-lbl">Restants</span>
-        </div>
-        <div class="stat-sep"></div>
-        <div class="stat-block">
-          <span class="stat-val" id="stat-entered">0</span>
-          <span class="stat-lbl">Entrés</span>
-        </div>
-        <div class="stat-sep"></div>
-        <div class="stat-block">
-          <span class="stat-val" id="stat-price-mode">—</span>
-          <span class="stat-lbl">Tarif actif</span>
-        </div>
-      </div>
 
       <div class="scan-block">
         <div class="scan-row">
@@ -187,16 +161,56 @@
         <h1>Registre</h1>
         <button class="btn-ghost" onclick="exportCSV()">Export CSV</button>
       </div>
+
+      <!-- Stats header (moved from Scanner) -->
+      <div class="stats-row" id="stats-row">
+        <div class="stat-block">
+          <span class="stat-val" id="stat-total">0</span>
+          <span class="stat-lbl">Tickets</span>
+        </div>
+        <div class="stat-sep"></div>
+        <div class="stat-block">
+          <span class="stat-val" id="stat-used">0</span>
+          <span class="stat-lbl">Vendus</span>
+        </div>
+        <div class="stat-sep"></div>
+        <div class="stat-block">
+          <span class="stat-val" id="stat-remaining">0</span>
+          <span class="stat-lbl">Restants</span>
+        </div>
+        <div class="stat-sep"></div>
+        <div class="stat-block">
+          <span class="stat-val" id="stat-entered">0</span>
+          <span class="stat-lbl">Entrés</span>
+        </div>
+        <div class="stat-sep"></div>
+        <div class="stat-block">
+          <span class="stat-val" id="stat-price-mode">—</span>
+          <span class="stat-lbl">Tarif actif</span>
+        </div>
+      </div>
+
       <div class="table-wrap">
         <table>
           <thead>
-            <tr><th>N° Ticket</th><th>Statut</th><th>Heure</th><th>Prix scanné</th></tr>
+            <tr>
+              <th>N° Ticket</th>
+              <th class="th-sort" id="th-status" onclick="sortRegistry('status')">Statut <span class="sort-ind" id="sort-ind-status"></span></th>
+              <th class="th-sort" id="th-time" onclick="sortRegistry('time')">Date &amp; heure <span class="sort-ind" id="sort-ind-time"></span></th>
+              <th>Prix scanné</th>
+            </tr>
           </thead>
           <tbody id="registry-body">
             <tr><td colspan="4" class="empty-state">Génère des tickets d'abord</td></tr>
           </tbody>
         </table>
       </div>
+    </section>
+
+    <!-- STATS (agent) -->
+    <section class="panel" id="panel-stats">
+      <div class="panel-head"><h1>Statistiques</h1></div>
+      <div id="stats-slot"></div>
     </section>
 
   </main>

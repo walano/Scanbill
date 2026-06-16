@@ -1,6 +1,6 @@
 // ── Config ──
 // Mets ton URL de déploiement ici — ex: 'https://scanbill.vercel.app'
-var SITE_URL = '';
+var SITE_URL = 'https://scanbill-ivory.vercel.app';
 
 // ── Supabase config ──
 var SUPABASE_URL = 'https://xudwrqowcnqsggiizmhw.supabase.co';
@@ -129,6 +129,7 @@ async function dbClearAll() {
 
 // ── Init ──
 (function init() {
+  // Populate currency dropdown
   var sel = document.getElementById('currency');
   CURRENCIES.forEach(function(c) {
     var o = document.createElement('option');
@@ -137,43 +138,39 @@ async function dbClearAll() {
     sel.appendChild(o);
   });
 
-  var today = new Date();
-  document.getElementById('concert-date').value = today.toISOString().split('T')[0];
+  // Set default concert date
+  document.getElementById('concert-date').value = new Date().toISOString().split('T')[0];
 
+  // Price preview listeners
   ['price-presale','price-door','concert-date','concert-time','currency'].forEach(function(id) {
     document.getElementById(id).addEventListener('change', updatePricePreview);
     document.getElementById(id).addEventListener('input', updatePricePreview);
   });
   updatePricePreview();
+
+  // Always set role UI immediately — never skip this
   selectRole('admin');
 
-  // Check for existing session on page load
-  if (SUPABASE_URL && SUPABASE_ANON_KEY) {
-    var s2 = document.createElement('script');
-    s2.src = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js';
-    s2.onload = function() {
-      if (initSupabase()) {
-        sb.auth.getSession().then(function(res) {
-          if (res.data && res.data.session) {
-            var meta = res.data.session.user.user_metadata || {};
-            currentRole = meta.role || 'agent';
-            document.getElementById('app-login').style.display = 'none';
-            document.getElementById('app-shell').style.display = 'flex';
-            loadAll().then(function() { setupShell(); });
-          }
-        });
-      }
-    };
-    document.head.appendChild(s2);
-    return;
-  }
-
-  // Load Supabase JS if configured (legacy path — kept as no-op since handled above)
-  var _dummy = null;
+  // Load Supabase async, then check for existing session
   if (SUPABASE_URL && SUPABASE_ANON_KEY) {
     var s = document.createElement('script');
     s.src = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js';
-    s.onload = function() { initSupabase(); };
+    s.onload = function() {
+      if (!initSupabase()) return;
+      // Auto-login if session exists
+      sb.auth.getSession().then(function(res) {
+        if (res.data && res.data.session) {
+          var meta = res.data.session.user.user_metadata || {};
+          currentRole = meta.role || 'agent';
+          document.getElementById('app-login').style.display = 'none';
+          document.getElementById('app-shell').style.display = 'flex';
+          loadAll().then(function() { setupShell(); });
+        }
+      });
+    };
+    s.onerror = function() {
+      document.getElementById('pin-err').textContent = 'Erreur de chargement. Vérifiez votre connexion.';
+    };
     document.head.appendChild(s);
   }
 })();
@@ -227,8 +224,19 @@ async function tryLogin() {
   document.getElementById('login-btn').disabled = true;
   document.getElementById('login-btn').textContent = 'Connexion...';
 
+  // Wait for Supabase to finish loading if needed (max 6s)
   if (!sb) {
-    err.textContent = 'Connexion Supabase non disponible.';
+    var waited = 0;
+    await new Promise(function(resolve) {
+      var check = setInterval(function() {
+        waited += 200;
+        if (sb || waited >= 6000) { clearInterval(check); resolve(); }
+      }, 200);
+    });
+  }
+
+  if (!sb) {
+    err.textContent = 'Connexion impossible. Vérifiez votre connexion internet.';
     document.getElementById('login-btn').disabled = false;
     document.getElementById('login-btn').textContent = 'Entrer';
     return;
@@ -270,62 +278,37 @@ async function logout() {
   selectRole('admin');
 }
 
-// ── Storage — localStorage fallback + Supabase ──
-function localSave() {
-  try {
-    localStorage.setItem('scanbill_tickets', JSON.stringify(tickets));
-    localStorage.setItem('scanbill_meta', JSON.stringify(concertMeta));
-  } catch(e) {}
-}
-
-function localLoad() {
-  try {
-    var raw = localStorage.getItem('scanbill_tickets');
-    var rawMeta = localStorage.getItem('scanbill_meta');
-    if (raw) tickets = JSON.parse(raw);
-    if (rawMeta) {
-      concertMeta = JSON.parse(rawMeta);
-      var su = document.getElementById('site-url');
-      if (su && concertMeta.siteUrl) su.value = concertMeta.siteUrl;
-    }
-  } catch(e) {}
-}
+// ── Storage — Supabase only ──
 
 async function loadAll() {
-  if (sb) {
-    var meta = await dbLoadMeta();
-    if (meta) {
-      concertMeta = {
-        name: meta.name, presale: meta.presale, door: meta.door,
-        currency: meta.currency, concertDate: meta.concert_date,
-        concertTime: meta.concert_time, siteUrl: meta.site_url || SITE_URL
-      };
-    }
-    var tix = await dbLoadTickets();
-    if (tix) tickets = tix;
-  } else {
-    localLoad();
+  if (!sb) return;
+  var meta = await dbLoadMeta();
+  if (meta) {
+    concertMeta = {
+      name: meta.name, presale: meta.presale, door: meta.door,
+      currency: meta.currency, concertDate: meta.concert_date,
+      concertTime: meta.concert_time, siteUrl: meta.site_url || SITE_URL
+    };
   }
+  var tix = await dbLoadTickets();
+  if (tix) tickets = tix;
   updateStats();
 }
 
 async function saveAll() {
-  localSave();
-  if (sb) {
-    await dbSaveMeta({
-      name: concertMeta.name, presale: concertMeta.presale, door: concertMeta.door,
-      currency: concertMeta.currency, concert_date: concertMeta.concertDate,
-      concert_time: concertMeta.concertTime, site_url: concertMeta.siteUrl || SITE_URL
-    });
-  }
+  if (!sb) return;
+  await dbSaveMeta({
+    name: concertMeta.name, presale: concertMeta.presale, door: concertMeta.door,
+    currency: concertMeta.currency, concert_date: concertMeta.concertDate,
+    concert_time: concertMeta.concertTime, site_url: concertMeta.siteUrl || SITE_URL
+  });
 }
 
 // ── Shell setup ──
 function setupShell() {
   var tag = document.getElementById('role-tag');
   var nav = document.getElementById('tab-nav');
-  var mode = sb ? 'Supabase' : 'local';
-  tag.textContent = (currentRole === 'admin' ? 'Organisateur' : 'Agent scan') + ' · ' + mode;
+  tag.textContent = currentRole === 'admin' ? 'Organisateur' : 'Agent scan';
 
   if (currentRole === 'admin') {
     nav.innerHTML =
@@ -383,7 +366,7 @@ function rebuildGrid() {
   keys.forEach(function(num) {
     var t = tickets[num];
     var resolvedUrl = (concertMeta.siteUrl || SITE_URL || '').replace(/\/+$/, '');
-    // Encode concert data in URL so client page works without DB/localStorage
+    // Encode concert data in QR URL params for client page
     var qrBase = resolvedUrl ? (resolvedUrl + '/ticket.html') : null;
     var qrParams = '?id=' + encodeURIComponent(num)
       + '&c=' + encodeURIComponent(name)
@@ -446,7 +429,7 @@ async function generateTickets() {
     newTickets.push(t);
 
     var resolvedUrl = siteUrl || '';
-    // Encode concert data in URL so client page works without DB/localStorage
+    // Encode concert data in QR URL params for client page
     var qrBase = resolvedUrl ? (resolvedUrl + '/ticket.html') : null;
     var qrParams = '?id=' + encodeURIComponent(num)
       + '&c=' + encodeURIComponent(name)
@@ -468,7 +451,6 @@ async function generateTickets() {
 
   await saveAll();
   if (sb) await dbInsertTickets(newTickets);
-  else localSave();
 
   document.getElementById('dl-btn').style.display = 'inline-block';
   updateStats();
@@ -489,7 +471,6 @@ async function clearTickets() {
   document.getElementById('ticket-grid').innerHTML = '';
   document.getElementById('dl-btn').style.display = 'none';
   if (sb) await dbClearAll();
-  localSave();
   updateStats();
 }
 
@@ -678,8 +659,7 @@ async function confirmEntry() {
     t.scannedPrice = active.price;
     t.scannedMode = active.mode;
     if (sb) await dbMarkSold(id, now, active.price, active.mode);
-    localSave();
-    scanLog.unshift({ id: id, time: now, action: 'vendu', price: active.price, currency: t.currency, mode: active.mode });
+      scanLog.unshift({ id: id, time: now, action: 'vendu', price: active.price, currency: t.currency, mode: active.mode });
     box.className = 'scan-result ok';
     box.textContent = id + ' — vendu · ' + active.price.toLocaleString() + ' ' + t.currency + ' · ' + now;
     showTicketDetail(t, 'sold');
@@ -692,8 +672,7 @@ async function confirmEntry() {
     t.entryTime = now;
     t.scanTime = now;
     if (sb) await dbMarkEntered(id, now);
-    localSave();
-    scanLog.unshift({ id: id, time: now, action: 'entré', price: t.scannedPrice || active.price, currency: t.currency, mode: t.scannedMode || active.mode });
+      scanLog.unshift({ id: id, time: now, action: 'entré', price: t.scannedPrice || active.price, currency: t.currency, mode: t.scannedMode || active.mode });
     box.className = 'scan-result ok';
     box.textContent = id + ' — accès accordé · ' + now;
     showTicketDetail(t, 'granted');

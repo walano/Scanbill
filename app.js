@@ -1,6 +1,6 @@
 // ── Config ──
 // Mets ton URL de déploiement ici — ex: 'https://scanbill.vercel.app'
-var SITE_URL = '';
+var SITE_URL = 'https://scanbill-ivory.vercel.app';
 
 // ── Supabase config ──
 var SUPABASE_URL = 'https://xudwrqowcnqsggiizmhw.supabase.co';
@@ -278,62 +278,37 @@ async function logout() {
   selectRole('admin');
 }
 
-// ── Storage — localStorage fallback + Supabase ──
-function localSave() {
-  try {
-    localStorage.setItem('scanbill_tickets', JSON.stringify(tickets));
-    localStorage.setItem('scanbill_meta', JSON.stringify(concertMeta));
-  } catch(e) {}
-}
-
-function localLoad() {
-  try {
-    var raw = localStorage.getItem('scanbill_tickets');
-    var rawMeta = localStorage.getItem('scanbill_meta');
-    if (raw) tickets = JSON.parse(raw);
-    if (rawMeta) {
-      concertMeta = JSON.parse(rawMeta);
-      var su = document.getElementById('site-url');
-      if (su && concertMeta.siteUrl) su.value = concertMeta.siteUrl;
-    }
-  } catch(e) {}
-}
+// ── Storage — Supabase only ──
 
 async function loadAll() {
-  if (sb) {
-    var meta = await dbLoadMeta();
-    if (meta) {
-      concertMeta = {
-        name: meta.name, presale: meta.presale, door: meta.door,
-        currency: meta.currency, concertDate: meta.concert_date,
-        concertTime: meta.concert_time, siteUrl: meta.site_url || SITE_URL
-      };
-    }
-    var tix = await dbLoadTickets();
-    if (tix) tickets = tix;
-  } else {
-    localLoad();
+  if (!sb) return;
+  var meta = await dbLoadMeta();
+  if (meta) {
+    concertMeta = {
+      name: meta.name, presale: meta.presale, door: meta.door,
+      currency: meta.currency, concertDate: meta.concert_date,
+      concertTime: meta.concert_time, siteUrl: meta.site_url || SITE_URL
+    };
   }
+  var tix = await dbLoadTickets();
+  if (tix) tickets = tix;
   updateStats();
 }
 
 async function saveAll() {
-  localSave();
-  if (sb) {
-    await dbSaveMeta({
-      name: concertMeta.name, presale: concertMeta.presale, door: concertMeta.door,
-      currency: concertMeta.currency, concert_date: concertMeta.concertDate,
-      concert_time: concertMeta.concertTime, site_url: concertMeta.siteUrl || SITE_URL
-    });
-  }
+  if (!sb) return;
+  await dbSaveMeta({
+    name: concertMeta.name, presale: concertMeta.presale, door: concertMeta.door,
+    currency: concertMeta.currency, concert_date: concertMeta.concertDate,
+    concert_time: concertMeta.concertTime, site_url: concertMeta.siteUrl || SITE_URL
+  });
 }
 
 // ── Shell setup ──
 function setupShell() {
   var tag = document.getElementById('role-tag');
   var nav = document.getElementById('tab-nav');
-  var mode = sb ? 'Supabase' : 'local';
-  tag.textContent = (currentRole === 'admin' ? 'Organisateur' : 'Agent scan') + ' · ' + mode;
+  tag.textContent = currentRole === 'admin' ? 'Organisateur' : 'Agent scan';
 
   if (currentRole === 'admin') {
     nav.innerHTML =
@@ -391,7 +366,7 @@ function rebuildGrid() {
   keys.forEach(function(num) {
     var t = tickets[num];
     var resolvedUrl = (concertMeta.siteUrl || SITE_URL || '').replace(/\/+$/, '');
-    // Encode concert data in URL so client page works without DB/localStorage
+    // Encode concert data in QR URL params for client page
     var qrBase = resolvedUrl ? (resolvedUrl + '/ticket.html') : null;
     var qrParams = '?id=' + encodeURIComponent(num)
       + '&c=' + encodeURIComponent(name)
@@ -454,7 +429,7 @@ async function generateTickets() {
     newTickets.push(t);
 
     var resolvedUrl = siteUrl || '';
-    // Encode concert data in URL so client page works without DB/localStorage
+    // Encode concert data in QR URL params for client page
     var qrBase = resolvedUrl ? (resolvedUrl + '/ticket.html') : null;
     var qrParams = '?id=' + encodeURIComponent(num)
       + '&c=' + encodeURIComponent(name)
@@ -476,7 +451,6 @@ async function generateTickets() {
 
   await saveAll();
   if (sb) await dbInsertTickets(newTickets);
-  else localSave();
 
   document.getElementById('dl-btn').style.display = 'inline-block';
   updateStats();
@@ -497,7 +471,6 @@ async function clearTickets() {
   document.getElementById('ticket-grid').innerHTML = '';
   document.getElementById('dl-btn').style.display = 'none';
   if (sb) await dbClearAll();
-  localSave();
   updateStats();
 }
 
@@ -686,8 +659,7 @@ async function confirmEntry() {
     t.scannedPrice = active.price;
     t.scannedMode = active.mode;
     if (sb) await dbMarkSold(id, now, active.price, active.mode);
-    localSave();
-    scanLog.unshift({ id: id, time: now, action: 'vendu', price: active.price, currency: t.currency, mode: active.mode });
+      scanLog.unshift({ id: id, time: now, action: 'vendu', price: active.price, currency: t.currency, mode: active.mode });
     box.className = 'scan-result ok';
     box.textContent = id + ' — vendu · ' + active.price.toLocaleString() + ' ' + t.currency + ' · ' + now;
     showTicketDetail(t, 'sold');
@@ -700,8 +672,7 @@ async function confirmEntry() {
     t.entryTime = now;
     t.scanTime = now;
     if (sb) await dbMarkEntered(id, now);
-    localSave();
-    scanLog.unshift({ id: id, time: now, action: 'entré', price: t.scannedPrice || active.price, currency: t.currency, mode: t.scannedMode || active.mode });
+      scanLog.unshift({ id: id, time: now, action: 'entré', price: t.scannedPrice || active.price, currency: t.currency, mode: t.scannedMode || active.mode });
     box.className = 'scan-result ok';
     box.textContent = id + ' — accès accordé · ' + now;
     showTicketDetail(t, 'granted');
@@ -748,7 +719,7 @@ function showTicketDetail(t, state) {
   } else if (state === 'pending-enter') {
     accessRow.style.display = 'flex';
     accessStatus.innerHTML = '<span class="tag-presale">vendu · ' + t.soldTime + '</span>';
-    confirmBtn.textContent = 'Confirmer l'accès';
+    confirmBtn.textContent = "Confirmer l'accès";
     confirmRow.style.display = 'flex';
   } else if (state === 'sold') {
     accessRow.style.display = 'flex';
